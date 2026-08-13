@@ -144,7 +144,7 @@ class AppController {
           this.store.syncConfig.gist.gistId = remoteEncData.gistId;
           this.store.saveMetadata();
         }
-        await this.store.loadFromEncryptedString(remoteEncData.content);
+        await this.store.loadFromEncryptedString(remoteEncData.content, this.store.currentMasterPassword);
         this.renderSidebar();
         this.renderVaultList();
         this.updateSyncStatus('已成功从云端拉取最新数据', new Date());

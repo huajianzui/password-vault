@@ -13,6 +13,7 @@ export class VaultStore {
     this.autoLockMinutes = 15;
     this.isUnlocked = false;
     this.lastActivity = Date.now();
+    this.currentMasterPassword = null; // Keep temporary in memory for salt re-derivation
     this.storageKey = 'ciphervault_encrypted_store';
     this.metaKey = 'ciphervault_metadata';
   }
@@ -27,6 +28,7 @@ export class VaultStore {
     this.salt = VaultCrypto.bufferToBase64(saltBytes);
     this.key = await VaultCrypto.deriveKey(masterPassword, saltBytes);
     this.verifier = await VaultCrypto.createVerifier(this.key);
+    this.currentMasterPassword = masterPassword;
     this.items = [];
     this.isUnlocked = true;
 
@@ -75,6 +77,7 @@ export class VaultStore {
     }
 
     this.key = derivedKey;
+    this.currentMasterPassword = masterPassword;
     this.isUnlocked = true;
     this.updateActivity();
 
@@ -84,6 +87,7 @@ export class VaultStore {
 
   lockVault() {
     this.key = null;
+    this.currentMasterPassword = null;
     this.items = [];
     this.isUnlocked = false;
   }
@@ -91,6 +95,7 @@ export class VaultStore {
   async persistVault() {
     if (!this.key) return;
     const encryptedObj = await VaultCrypto.encryptData(this.items, this.key);
+    encryptedObj.salt = this.salt; // Pack public Salt together with IV and Ciphertext
     localStorage.setItem(this.storageKey, JSON.stringify(encryptedObj));
     return JSON.stringify(encryptedObj);
   }
@@ -113,33 +118,45 @@ export class VaultStore {
   }
 
   /**
-   * Load and MERGE remote items with local items (never overwrite active items with empty array)
+   * Load and MERGE remote items with local items (supports cross-device Salt re-derivation)
    */
-  async loadFromEncryptedString(encStr) {
-    if (!this.key) return false;
+  async loadFromEncryptedString(encStr, currentMasterPassword = null) {
+    const pass = currentMasterPassword || this.currentMasterPassword;
+    if (!this.key && !pass) return false;
+
     try {
       const encryptedObj = JSON.parse(encStr);
-      const remoteItems = await VaultCrypto.decryptData(encryptedObj, this.key);
+      let decryptKey = this.key;
 
+      // Re-derive key using remote Salt + Master Password if remote Salt differs
+      if (encryptedObj.salt && pass) {
+        const saltBytes = new Uint8Array(VaultCrypto.base64ToBuffer(encryptedObj.salt));
+        decryptKey = await VaultCrypto.deriveKey(pass, saltBytes);
+      }
+
+      const remoteItems = await VaultCrypto.decryptData(encryptedObj, decryptKey);
       if (!Array.isArray(remoteItems)) return false;
 
+      // If remote decryption with same master password succeeded, align key and salt
+      if (encryptedObj.salt && pass) {
+        this.key = decryptKey;
+        this.salt = encryptedObj.salt;
+        this.verifier = await VaultCrypto.createVerifier(this.key);
+        this.saveMetadata();
+      }
+
       const itemMap = new Map();
-      // Put existing local items in map
       this.items.forEach(item => itemMap.set(item.id, item));
 
-      let hasNewData = false;
-      // Merge remote items
       remoteItems.forEach(remoteItem => {
         const existing = itemMap.get(remoteItem.id);
         if (!existing) {
           itemMap.set(remoteItem.id, remoteItem);
-          hasNewData = true;
         } else {
           const localTime = new Date(existing.updatedAt || 0).getTime();
           const remoteTime = new Date(remoteItem.updatedAt || 0).getTime();
           if (remoteTime > localTime) {
             itemMap.set(remoteItem.id, remoteItem);
-            hasNewData = true;
           }
         }
       });
@@ -149,7 +166,7 @@ export class VaultStore {
       return true;
     } catch (e) {
       console.error('Remote decryption failed:', e);
-      throw new Error('无法用当前主密码解密云端备份文件');
+      throw new Error('解密云端数据失败，请确认两端主密码是否完全一致（区分大小写）');
     }
   }
 
