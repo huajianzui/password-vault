@@ -17,17 +17,11 @@ export class VaultStore {
     this.metaKey = 'ciphervault_metadata';
   }
 
-  /**
-   * Check if vault has been initialized with a master password
-   */
   hasInitializedVault() {
     const meta = localStorage.getItem(this.metaKey);
     return meta !== null;
   }
 
-  /**
-   * Initialize a brand new vault
-   */
   async initializeVault(masterPassword) {
     const saltBytes = VaultCrypto.generateRandomBytes(16);
     this.salt = VaultCrypto.bufferToBase64(saltBytes);
@@ -36,16 +30,11 @@ export class VaultStore {
     this.items = [];
     this.isUnlocked = true;
 
-    // Save metadata
     this.saveMetadata();
-    // Save empty encrypted items
     await this.persistVault();
     return true;
   }
 
-  /**
-   * Save metadata (salt, verifier, sync settings) to localStorage
-   */
   saveMetadata() {
     const meta = {
       salt: this.salt,
@@ -56,9 +45,6 @@ export class VaultStore {
     localStorage.setItem(this.metaKey, JSON.stringify(meta));
   }
 
-  /**
-   * Load metadata from localStorage
-   */
   loadMetadata() {
     const metaStr = localStorage.getItem(this.metaKey);
     if (!metaStr) return false;
@@ -75,9 +61,6 @@ export class VaultStore {
     }
   }
 
-  /**
-   * Unlock vault with master password
-   */
   async unlockVault(masterPassword) {
     if (!this.loadMetadata()) {
       throw new Error('未找到已初始化的保险库');
@@ -88,30 +71,23 @@ export class VaultStore {
 
     const isValid = await VaultCrypto.verifyKey(derivedKey, this.verifier);
     if (!isValid) {
-      return false; // Wrong master password
+      return false;
     }
 
     this.key = derivedKey;
     this.isUnlocked = true;
     this.updateActivity();
 
-    // Load and decrypt items
     await this.loadVaultItems();
     return true;
   }
 
-  /**
-   * Lock vault (wipe key and decrypted items from memory)
-   */
   lockVault() {
     this.key = null;
     this.items = [];
     this.isUnlocked = false;
   }
 
-  /**
-   * Encrypt and persist items to localStorage
-   */
   async persistVault() {
     if (!this.key) return;
     const encryptedObj = await VaultCrypto.encryptData(this.items, this.key);
@@ -119,9 +95,6 @@ export class VaultStore {
     return JSON.stringify(encryptedObj);
   }
 
-  /**
-   * Load and decrypt items from localStorage
-   */
   async loadVaultItems() {
     if (!this.key) return;
     const encStr = localStorage.getItem(this.storageKey);
@@ -140,14 +113,38 @@ export class VaultStore {
   }
 
   /**
-   * Load items from remote encrypted string (WebDAV / Gist)
+   * Load and MERGE remote items with local items (never overwrite active items with empty array)
    */
   async loadFromEncryptedString(encStr) {
-    if (!this.key) return;
+    if (!this.key) return false;
     try {
       const encryptedObj = JSON.parse(encStr);
       const remoteItems = await VaultCrypto.decryptData(encryptedObj, this.key);
-      this.items = remoteItems;
+
+      if (!Array.isArray(remoteItems)) return false;
+
+      const itemMap = new Map();
+      // Put existing local items in map
+      this.items.forEach(item => itemMap.set(item.id, item));
+
+      let hasNewData = false;
+      // Merge remote items
+      remoteItems.forEach(remoteItem => {
+        const existing = itemMap.get(remoteItem.id);
+        if (!existing) {
+          itemMap.set(remoteItem.id, remoteItem);
+          hasNewData = true;
+        } else {
+          const localTime = new Date(existing.updatedAt || 0).getTime();
+          const remoteTime = new Date(remoteItem.updatedAt || 0).getTime();
+          if (remoteTime > localTime) {
+            itemMap.set(remoteItem.id, remoteItem);
+            hasNewData = true;
+          }
+        }
+      });
+
+      this.items = Array.from(itemMap.values());
       await this.persistVault();
       return true;
     } catch (e) {
@@ -156,9 +153,6 @@ export class VaultStore {
     }
   }
 
-  /**
-   * Add or update an item
-   */
   async saveItem(item) {
     const index = this.items.findIndex(i => i.id === item.id);
     item.updatedAt = new Date().toISOString();
@@ -177,9 +171,6 @@ export class VaultStore {
     return item;
   }
 
-  /**
-   * Move item to Trash / Permanent Delete
-   */
   async deleteItem(id, permanent = false) {
     if (permanent) {
       this.items = this.items.filter(i => i.id !== id);
@@ -193,9 +184,6 @@ export class VaultStore {
     await this.persistVault();
   }
 
-  /**
-   * Restore item from Trash
-   */
   async restoreItem(id) {
     const item = this.items.find(i => i.id === id);
     if (item) {
@@ -205,9 +193,6 @@ export class VaultStore {
     }
   }
 
-  /**
-   * Toggle favorite
-   */
   async toggleFavorite(id) {
     const item = this.items.find(i => i.id === id);
     if (item) {
@@ -216,9 +201,6 @@ export class VaultStore {
     }
   }
 
-  /**
-   * Extract domain or return favicon URL
-   */
   static getFaviconUrl(url, title = '') {
     if (!url) return null;
     try {
@@ -235,9 +217,6 @@ export class VaultStore {
     }
   }
 
-  /**
-   * Audit vault passwords for health metrics
-   */
   auditVault() {
     const activeItems = this.items.filter(i => !i.trash && i.password);
     const total = activeItems.length;
@@ -247,12 +226,9 @@ export class VaultStore {
     const reusedItems = [];
 
     activeItems.forEach(item => {
-      // Weak check (length < 8 or score low)
       if (item.password.length < 8 || /^[0-9]+$/.test(item.password)) {
         weakItems.push(item);
       }
-
-      // Reuse check
       passwordCounts[item.password] = (passwordCounts[item.password] || 0) + 1;
     });
 
