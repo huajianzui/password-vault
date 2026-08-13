@@ -1,11 +1,13 @@
 /**
  * CipherVault Service Worker - PWA Offline Support
  */
-const CACHE_NAME = 'ciphervault-v1';
+const CACHE_NAME = 'ciphervault-v2';
 const ASSETS_TO_CACHE = [
   './',
   './index.html',
   './manifest.json',
+  './icon.jpg',
+  './apple-touch-icon.png',
   './css/main.css',
   './css/components.css',
   './js/crypto.js',
@@ -40,18 +42,16 @@ self.addEventListener('activate', (event) => {
 });
 
 self.addEventListener('fetch', (event) => {
-  // Only handle GET requests
   if (event.request.method !== 'GET') return;
 
   event.respondWith(
     caches.match(event.request).then((cachedResponse) => {
       if (cachedResponse) {
-        // Fetch fresh copy in background
         fetch(event.request).then((networkResponse) => {
           if (networkResponse && networkResponse.status === 200) {
             caches.open(CACHE_NAME).then((cache) => cache.put(event.request, networkResponse));
           }
-        }).catch(() => {/* Offline fallback */});
+        }).catch(() => {});
         return cachedResponse;
       }
       return fetch(event.request);
