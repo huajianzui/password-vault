@@ -17,6 +17,7 @@ class AppController {
     this.totpTimer = null;
     this.clipboardTimer = null;
     this.autoLockCheckTimer = null;
+    this.lastSyncTime = null;
   }
 
   async init() {
@@ -27,7 +28,7 @@ class AppController {
     this.autoLockCheckTimer = setInterval(() => {
       if (this.store.checkAutoLock()) {
         this.showToast('保险库已被闲置自动锁定', 'warning');
-        this.renderLockOverlay();
+        this.checkVaultStatus();
       }
     }, 30000);
 
@@ -87,9 +88,82 @@ class AppController {
       this.renderSidebar();
       this.renderVaultList();
       this.clearDetailPane();
+
+      // Auto Pull latest data from cloud (WebDAV/Gist) on unlock
+      await this.autoSyncPull();
     } catch (err) {
       console.error(err);
       this.showToast('操作失败: ' + err.message, 'danger');
+    }
+  }
+
+  /**
+   * Auto Sync Push: Push encrypted data to cloud automatically on save/delete
+   */
+  async autoSyncPush() {
+    const cfg = this.store.syncConfig;
+    if (!cfg || cfg.mode === 'local') return;
+
+    try {
+      const encStr = await this.store.persistVault();
+      if (cfg.mode === 'webdav' && cfg.webdav && cfg.webdav.url) {
+        await SyncClient.pushWebDAV(cfg.webdav, encStr);
+        this.updateSyncStatus('已同步至 WebDAV', new Date());
+      } else if (cfg.mode === 'gist' && cfg.gist && cfg.gist.token) {
+        const newGistId = await SyncClient.pushGist(cfg.gist, encStr);
+        if (newGistId && newGistId !== cfg.gist.gistId) {
+          this.store.syncConfig.gist.gistId = newGistId;
+          this.store.saveMetadata();
+        }
+        this.updateSyncStatus('已实时同步至 GitHub Gist', new Date());
+      }
+    } catch (e) {
+      console.warn('Auto sync push error:', e);
+      this.updateSyncStatus('同步失败: ' + e.message, null, true);
+    }
+  }
+
+  /**
+   * Auto Sync Pull: Pull remote data and update local storage
+   */
+  async autoSyncPull() {
+    const cfg = this.store.syncConfig;
+    if (!cfg || cfg.mode === 'local') return;
+
+    try {
+      let remoteEncStr = null;
+      if (cfg.mode === 'webdav' && cfg.webdav && cfg.webdav.url) {
+        remoteEncStr = await SyncClient.pullWebDAV(cfg.webdav);
+      } else if (cfg.mode === 'gist' && cfg.gist && cfg.gist.token && cfg.gist.gistId) {
+        remoteEncStr = await SyncClient.pullGist(cfg.gist);
+      }
+
+      if (remoteEncStr) {
+        await this.store.loadFromEncryptedString(remoteEncStr);
+        this.renderSidebar();
+        this.renderVaultList();
+        this.updateSyncStatus('已成功拉取云端数据', new Date());
+      }
+    } catch (e) {
+      console.warn('Auto sync pull error:', e);
+    }
+  }
+
+  updateSyncStatus(text, dateObj = null, isError = false) {
+    const indicator = document.getElementById('sync-status-indicator');
+    if (!indicator) return;
+
+    if (dateObj) {
+      this.lastSyncTime = dateObj;
+      const timeStr = dateObj.toLocaleTimeString();
+      indicator.textContent = `${text} (${timeStr})`;
+      indicator.style.color = 'var(--success)';
+    } else if (isError) {
+      indicator.textContent = text;
+      indicator.style.color = 'var(--danger)';
+    } else {
+      indicator.textContent = text;
+      indicator.style.color = 'var(--text-muted)';
     }
   }
 
@@ -133,7 +207,6 @@ class AppController {
     container.innerHTML = '';
 
     const filtered = this.store.items.filter(item => {
-      // Filter by category
       if (this.currentCategory === 'favorite' && (!item.favorite || item.trash)) return false;
       if (this.currentCategory === 'trash' && !item.trash) return false;
       if (this.currentCategory !== 'trash' && item.trash) return false;
@@ -146,7 +219,6 @@ class AppController {
         if (!isWeak && !isReused) return false;
       }
 
-      // Filter by search query
       if (this.searchQuery) {
         const q = this.searchQuery.toLowerCase();
         const titleMatch = (item.title || '').toLowerCase().includes(q);
@@ -294,6 +366,7 @@ class AppController {
       this.renderSidebar();
       this.renderVaultList();
       this.renderDetailPane(item);
+      await this.autoSyncPush();
     });
 
     document.getElementById('btn-delete-item').addEventListener('click', async () => {
@@ -310,6 +383,7 @@ class AppController {
       this.renderSidebar();
       this.renderVaultList();
       this.clearDetailPane();
+      await this.autoSyncPush();
     });
 
     document.getElementById('btn-edit-item').addEventListener('click', () => {
@@ -326,7 +400,7 @@ class AppController {
     if (item.password) {
       let isVisible = false;
       const pwdDisplay = document.getElementById('pwd-display');
-      document.getElementById('toggle-pwd-mask').addEventListener('click', (e) => {
+      document.getElementById('toggle-pwd-mask').addEventListener('click', () => {
         isVisible = !isVisible;
         pwdDisplay.textContent = isVisible ? item.password : '••••••••••••';
       });
@@ -343,7 +417,6 @@ class AppController {
       });
     }
 
-    // Start 2FA TOTP Timer if secret exists
     if (item.totpSecret) {
       this.startTotpLoop(item.totpSecret);
       document.getElementById('copy-totp').addEventListener('click', async () => {
@@ -377,7 +450,7 @@ class AppController {
     pane.classList.remove('mobile-active');
     pane.innerHTML = `
       <div style="flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; color: var(--text-dim);">
-        <i data-lucide="shield-check" style="width: 64px; height: 64px; margin-bottom: 16px; color: var(--primary);"></i>
+        <img src="icon.jpg" style="width: 64px; height: 64px; border-radius: 18px; margin-bottom: 16px; object-fit: cover;" />
         <h3 style="font-size: 18px; color: var(--text-main); margin-bottom: 8px;">CipherVault 密室保护中</h3>
         <p style="font-size: 14px;">在左侧选择一个凭据条目以查看详细加密数据</p>
       </div>
@@ -407,27 +480,22 @@ class AppController {
   }
 
   bindEvents() {
-    // Lock submit
     document.getElementById('lock-form').addEventListener('submit', (e) => this.handleMasterAuth(e));
 
-    // Lock Vault button
     document.getElementById('btn-lock-vault').addEventListener('click', () => {
       this.store.lockVault();
       this.checkVaultStatus();
       this.showToast('保险库已手动锁定', 'warning');
     });
 
-    // Add New Item button
     document.getElementById('btn-add-item').addEventListener('click', () => {
       this.openItemModal();
     });
 
-    // Modal Close buttons
     document.querySelectorAll('.btn-close-modal').forEach(btn => {
       btn.addEventListener('click', () => this.closeModals());
     });
 
-    // Item Form Submit
     document.getElementById('item-form').addEventListener('submit', async (e) => {
       e.preventDefault();
       const id = document.getElementById('modal-item-id').value;
@@ -459,11 +527,13 @@ class AppController {
       this.renderSidebar();
       this.renderVaultList();
       this.renderDetailPane(saved);
+
+      // Auto Push to cloud
+      await this.autoSyncPush();
     });
 
-    // Category Navigation Click
     document.querySelectorAll('.nav-item').forEach(nav => {
-      nav.addEventListener('click', (e) => {
+      nav.addEventListener('click', () => {
         document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
         nav.classList.add('active');
         this.currentCategory = nav.dataset.category;
@@ -471,13 +541,11 @@ class AppController {
       });
     });
 
-    // Search Input
     document.getElementById('search-input').addEventListener('input', (e) => {
       this.searchQuery = e.target.value;
       this.renderVaultList();
     });
 
-    // Password Generator Modal & Slider
     document.getElementById('btn-open-generator').addEventListener('click', () => {
       document.getElementById('generator-modal').classList.add('open');
       this.updateGeneratorOutput();
@@ -501,7 +569,6 @@ class AppController {
       this.closeModals();
     });
 
-    // Import CSV Modal
     document.getElementById('btn-open-import').addEventListener('click', () => {
       document.getElementById('import-modal').classList.add('open');
     });
@@ -536,9 +603,11 @@ class AppController {
       this.closeModals();
       this.renderSidebar();
       this.renderVaultList();
+
+      // Auto push all imported items to cloud
+      await this.autoSyncPush();
     });
 
-    // Export Encrypted Backup
     document.getElementById('btn-export-backup').addEventListener('click', async () => {
       const encStr = await this.store.persistVault();
       const blob = new Blob([encStr], { type: 'application/json' });
@@ -563,6 +632,13 @@ class AppController {
       document.getElementById('gist-id').value = (cfg.gist && cfg.gist.gistId) || '';
     });
 
+    // Manual Sync Now button inside Sync Modal
+    document.getElementById('btn-manual-sync-now').addEventListener('click', async () => {
+      this.showToast('正在即时双向同步云端数据...', 'success');
+      await this.autoSyncPull();
+      await this.autoSyncPush();
+    });
+
     document.getElementById('btn-save-sync-config').addEventListener('click', async () => {
       const mode = document.getElementById('sync-mode-select').value;
       this.store.syncConfig = {
@@ -580,27 +656,8 @@ class AppController {
       this.store.saveMetadata();
       this.showToast('同步配置保存成功！', 'success');
 
-      // Execute Sync Push immediately
-      if (mode === 'webdav') {
-        try {
-          const encStr = await this.store.persistVault();
-          await SyncClient.pushWebDAV(this.store.syncConfig.webdav, encStr);
-          this.showToast('已成功推送到 WebDAV 云盘！', 'success');
-        } catch (err) {
-          this.showToast('WebDAV 同步失败: ' + err.message, 'danger');
-        }
-      } else if (mode === 'gist') {
-        try {
-          const encStr = await this.store.persistVault();
-          const newGistId = await SyncClient.pushGist(this.store.syncConfig.gist, encStr);
-          this.store.syncConfig.gist.gistId = newGistId;
-          this.store.saveMetadata();
-          this.showToast('已成功推送到 GitHub Gist！', 'success');
-        } catch (err) {
-          this.showToast('Gist 同步失败: ' + err.message, 'danger');
-        }
-      }
-
+      // Execute Sync Push & Pull immediately
+      await this.autoSyncPush();
       this.closeModals();
     });
   }

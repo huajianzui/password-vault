@@ -337,9 +337,12 @@
           </div>
         </div>
       </div>
-      <div class="modal-footer">
-        <button type="button" class="btn btn-secondary btn-close-modal">取消</button>
-        <button type="button" class="btn btn-primary" id="btn-save-sync-config">保存并测试同步</button>
+      <div class="modal-footer" style="justify-content: space-between;">
+        <span id="sync-status-indicator" style="font-size: 12px; color: var(--text-muted);">尚未同步</span>
+        <div style="display: flex; gap: 8px;">
+          <button type="button" class="btn btn-secondary" id="btn-manual-sync-now"><i data-lucide="refresh-cw"></i> 立即双向同步</button>
+          <button type="button" class="btn btn-primary" id="btn-save-sync-config">保存配置</button>
+        </div>
       </div>
     </div>
   </div>
