@@ -124,28 +124,34 @@ class AppController {
   }
 
   /**
-   * Auto Sync Pull: Pull remote data and update local storage
+   * Auto Sync Pull: Pull remote data and update local storage (supports auto Gist ID discovery)
    */
   async autoSyncPull() {
     const cfg = this.store.syncConfig;
     if (!cfg || cfg.mode === 'local') return;
 
     try {
-      let remoteEncStr = null;
+      let remoteEncData = null;
       if (cfg.mode === 'webdav' && cfg.webdav && cfg.webdav.url) {
-        remoteEncStr = await SyncClient.pullWebDAV(cfg.webdav);
-      } else if (cfg.mode === 'gist' && cfg.gist && cfg.gist.token && cfg.gist.gistId) {
-        remoteEncStr = await SyncClient.pullGist(cfg.gist);
+        const content = await SyncClient.pullWebDAV(cfg.webdav);
+        if (content) remoteEncData = { content };
+      } else if (cfg.mode === 'gist' && cfg.gist && cfg.gist.token) {
+        remoteEncData = await SyncClient.pullGist(cfg.gist);
       }
 
-      if (remoteEncStr) {
-        await this.store.loadFromEncryptedString(remoteEncStr);
+      if (remoteEncData && remoteEncData.content) {
+        if (remoteEncData.gistId && remoteEncData.gistId !== cfg.gist.gistId) {
+          this.store.syncConfig.gist.gistId = remoteEncData.gistId;
+          this.store.saveMetadata();
+        }
+        await this.store.loadFromEncryptedString(remoteEncData.content);
         this.renderSidebar();
         this.renderVaultList();
-        this.updateSyncStatus('已成功拉取云端数据', new Date());
+        this.updateSyncStatus('已成功从云端拉取最新数据', new Date());
       }
     } catch (e) {
       console.warn('Auto sync pull error:', e);
+      this.updateSyncStatus('云端拉取失败: ' + e.message, null, true);
     }
   }
 
@@ -360,7 +366,6 @@ class AppController {
 
     if (window.lucide) window.lucide.createIcons();
 
-    // Bind Detail Event Handlers
     document.getElementById('btn-toggle-fav').addEventListener('click', async () => {
       await this.store.toggleFavorite(item.id);
       this.renderSidebar();
@@ -604,7 +609,6 @@ class AppController {
       this.renderSidebar();
       this.renderVaultList();
 
-      // Auto push all imported items to cloud
       await this.autoSyncPush();
     });
 
@@ -656,7 +660,7 @@ class AppController {
       this.store.saveMetadata();
       this.showToast('同步配置保存成功！', 'success');
 
-      // Execute Sync Push & Pull immediately
+      await this.autoSyncPull();
       await this.autoSyncPush();
       this.closeModals();
     });

@@ -3,7 +3,7 @@
  */
 export class SyncClient {
   /**
-   * WebDAV Sync Push (Encrypt payload -> upload file to WebDAV URL)
+   * WebDAV Sync Push
    */
   static async pushWebDAV(config, encryptedString) {
     const { url, username, password } = config;
@@ -31,7 +31,7 @@ export class SyncClient {
   }
 
   /**
-   * WebDAV Sync Pull (Download encrypted JSON string from WebDAV)
+   * WebDAV Sync Pull
    */
   static async pullWebDAV(config) {
     const { url, username, password } = config;
@@ -50,7 +50,7 @@ export class SyncClient {
     });
 
     if (response.status === 404) {
-      return null; // File doesn't exist yet on WebDAV
+      return null;
     }
 
     if (!response.ok) {
@@ -61,11 +61,39 @@ export class SyncClient {
   }
 
   /**
+   * Automatically search for existing ciphervault.json Gist under user's GitHub account
+   */
+  static async findExistingGist(token) {
+    if (!token) return null;
+    try {
+      const response = await fetch('https://api.github.com/gists?per_page=100', {
+        headers: {
+          'Authorization': `token ${token}`,
+          'Accept': 'application/vnd.github.v3+json'
+        }
+      });
+      if (!response.ok) return null;
+      const gists = await response.json();
+      const found = gists.find(g => g.files && (g.files['ciphervault.json'] || g.description.includes('CipherVault')));
+      return found ? found.id : null;
+    } catch (e) {
+      console.warn('Find Gist failed:', e);
+      return null;
+    }
+  }
+
+  /**
    * GitHub Gist Sync Push
    */
   static async pushGist(config, encryptedString) {
-    const { token, gistId } = config;
+    let { token, gistId } = config;
     if (!token) throw new Error('请输入 GitHub Personal Access Token');
+
+    // Auto-discover Gist ID if missing
+    if (!gistId) {
+      const existingId = await this.findExistingGist(token);
+      if (existingId) gistId = existingId;
+    }
 
     const payload = {
       description: 'CipherVault Encrypted Backup Data',
@@ -77,7 +105,6 @@ export class SyncClient {
 
     let response;
     if (gistId) {
-      // Update existing Gist
       response = await fetch(`https://api.github.com/gists/${gistId}`, {
         method: 'PATCH',
         headers: {
@@ -88,7 +115,6 @@ export class SyncClient {
         body: JSON.stringify(payload)
       });
     } else {
-      // Create new Gist
       response = await fetch('https://api.github.com/gists', {
         method: 'POST',
         headers: {
@@ -105,15 +131,22 @@ export class SyncClient {
     }
 
     const data = await response.json();
-    return data.id; // Return new or existing Gist ID
+    return data.id;
   }
 
   /**
    * GitHub Gist Sync Pull
    */
   static async pullGist(config) {
-    const { token, gistId } = config;
-    if (!token || !gistId) throw new Error('GitHub Token 或 Gist ID 未配置');
+    let { token, gistId } = config;
+    if (!token) throw new Error('GitHub Token 未配置');
+
+    // Auto-discover Gist ID if missing
+    if (!gistId) {
+      gistId = await this.findExistingGist(token);
+    }
+
+    if (!gistId) return null;
 
     const response = await fetch(`https://api.github.com/gists/${gistId}`, {
       method: 'GET',
@@ -129,7 +162,10 @@ export class SyncClient {
 
     const data = await response.json();
     if (data.files && data.files['ciphervault.json']) {
-      return data.files['ciphervault.json'].content;
+      return {
+        gistId: data.id,
+        content: data.files['ciphervault.json'].content
+      };
     }
     return null;
   }
