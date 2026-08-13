@@ -1,0 +1,362 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <title>CipherVault - 开源端到端加密密码管家</title>
+  <meta name="description" content="CipherVault 是一款零知识、高强度的端到端加密密码管理应用，支持 PC 与移动端 PWA 离线运行及 WebDAV 云盘零成本同步。" />
+  <link rel="manifest" href="manifest.json" />
+  <meta name="theme-color" content="#0f172a" />
+  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='%236366f1'><path d='M12 1L3 5v6c0 5.55 3.84 10.74 9 12 5.16-1.26 9-6.45 9-12V5l-9-4zm0 10.99h7c-.53 4.12-3.28 7.79-7 8.94V12H5V6.3l7-3.11v8.8Mess9z'/></svg>" />
+  <link rel="stylesheet" href="css/main.css" />
+  <link rel="stylesheet" href="css/components.css" />
+  <!-- Lucide Icons CDN -->
+  <script src="https://unpkg.com/lucide@latest"></script>
+</head>
+<body>
+  <div id="app">
+    <!-- Sidebar Navigation -->
+    <aside class="sidebar">
+      <div class="sidebar-header">
+        <div class="brand">
+          <div class="brand-icon"><i data-lucide="shield-lock"></i></div>
+          <span>CipherVault</span>
+        </div>
+        <button class="btn-icon" id="btn-open-sync" title="云同步 / WebDAV 设置"><i data-lucide="cloud-cog"></i></button>
+      </div>
+
+      <nav class="sidebar-nav">
+        <div class="nav-section-title">分类分类</div>
+        <div class="nav-item active" data-category="all">
+          <div style="display: flex; align-items: center; gap: 10px;">
+            <i data-lucide="layers"></i>
+            <span>所有凭据</span>
+          </div>
+          <span class="nav-badge" id="count-all">0</span>
+        </div>
+        <div class="nav-item" data-category="favorite">
+          <div style="display: flex; align-items: center; gap: 10px;">
+            <i data-lucide="star"></i>
+            <span>收藏夹</span>
+          </div>
+          <span class="nav-badge" id="count-favorite">0</span>
+        </div>
+        <div class="nav-item" data-category="login">
+          <div style="display: flex; align-items: center; gap: 10px;">
+            <i data-lucide="globe"></i>
+            <span>Web / 移动 App 登录</span>
+          </div>
+          <span class="nav-badge" id="count-login">0</span>
+        </div>
+        <div class="nav-item" data-category="card">
+          <div style="display: flex; align-items: center; gap: 10px;">
+            <i data-lucide="credit-card"></i>
+            <span>支付卡片</span>
+          </div>
+          <span class="nav-badge" id="count-card">0</span>
+        </div>
+        <div class="nav-item" data-category="note">
+          <div style="display: flex; align-items: center; gap: 10px;">
+            <i data-lucide="file-text"></i>
+            <span>安全备忘录</span>
+          </div>
+          <span class="nav-badge" id="count-note">0</span>
+        </div>
+
+        <div class="nav-section-title">安全工具与维护</div>
+        <div class="nav-item" data-category="audit">
+          <div style="display: flex; align-items: center; gap: 10px;">
+            <i data-lucide="activity" style="color: var(--warning);"></i>
+            <span>密码健康度诊断</span>
+          </div>
+          <span class="nav-badge" id="count-audit">0</span>
+        </div>
+        <div class="nav-item" id="btn-open-import">
+          <div style="display: flex; align-items: center; gap: 10px;">
+            <i data-lucide="download-cloud"></i>
+            <span>导入 Chrome / CSV 数据</span>
+          </div>
+        </div>
+        <div class="nav-item" id="btn-export-backup">
+          <div style="display: flex; align-items: center; gap: 10px;">
+            <i data-lucide="upload-cloud"></i>
+            <span>导出加密 JSON 备份</span>
+          </div>
+        </div>
+        <div class="nav-item" data-category="trash">
+          <div style="display: flex; align-items: center; gap: 10px;">
+            <i data-lucide="trash-2"></i>
+            <span>回收站</span>
+          </div>
+          <span class="nav-badge" id="count-trash">0</span>
+        </div>
+      </nav>
+
+      <div class="sidebar-footer">
+        <button class="btn btn-secondary" id="btn-open-generator" style="width: 100%; justify-content: flex-start;">
+          <i data-lucide="key-round"></i>
+          <span>强密码生成器</span>
+        </button>
+      </div>
+    </aside>
+
+    <!-- Main Content Area -->
+    <main class="main-content">
+      <!-- Item List Pane -->
+      <section class="vault-list-pane">
+        <div class="search-header">
+          <div style="display: flex; align-items: center; justify-content: space-between;">
+            <h2 style="font-size: 18px; font-weight: 700;">保险库列表</h2>
+            <div style="display: flex; gap: 6px;">
+              <button class="btn btn-primary" id="btn-add-item" style="padding: 8px 12px; font-size: 13px;">
+                <i data-lucide="plus"></i> 新建
+              </button>
+              <button class="btn-icon" id="btn-lock-vault" title="立即锁定保险库">
+                <i data-lucide="lock"></i>
+              </button>
+            </div>
+          </div>
+          <div class="search-bar">
+            <i data-lucide="search" class="search-icon"></i>
+            <input type="text" id="search-input" class="form-input search-input" placeholder="搜索名称、账号、网址或标签..." />
+          </div>
+        </div>
+
+        <div class="items-scroll" id="vault-items-container">
+          <!-- Dynamic Items List -->
+        </div>
+      </section>
+
+      <!-- Item Detail Pane -->
+      <section class="vault-detail-pane" id="vault-detail-pane">
+        <!-- Dynamic Detail View -->
+      </section>
+    </main>
+  </div>
+
+  <!-- ------------------------------------------------------------------------
+       Master Password Lock Screen Overlay
+       ------------------------------------------------------------------------ -->
+  <div class="lock-screen" id="lock-overlay">
+    <div class="lock-card">
+      <div class="lock-logo"><i data-lucide="shield-check" style="width: 36px; height: 36px;"></i></div>
+      <h2 class="lock-title" id="lock-title">CipherVault</h2>
+      <p class="lock-subtitle" id="lock-subtitle">零知识端到端加密密码管家</p>
+
+      <form id="lock-form">
+        <div class="form-group">
+          <input type="password" id="master-password-input" class="form-input" placeholder="请输入您的主密码..." required autofocus />
+        </div>
+        <p id="init-notice" style="display: none; font-size: 12px; color: var(--warning); margin-bottom: 16px; text-align: left;">
+          ⚠️ 注意：请牢记您的主密码！主密码派生 AES-256 加密密钥，若忘记主密码任何人都无法恢复您的加密数据。
+        </p>
+        <button type="submit" class="btn btn-primary" style="width: 100%; padding: 12px;">解锁保险库</button>
+      </form>
+    </div>
+  </div>
+
+  <!-- ------------------------------------------------------------------------
+       Add / Edit Item Modal
+       ------------------------------------------------------------------------ -->
+  <div class="modal-overlay" id="item-modal">
+    <div class="modal-container">
+      <div class="modal-header">
+        <h3 class="modal-title" id="modal-item-title">新建账号凭据</h3>
+        <button class="btn-icon btn-close-modal"><i data-lucide="x"></i></button>
+      </div>
+      <form id="item-form">
+        <div class="modal-body">
+          <input type="hidden" id="modal-item-id" />
+          <div class="form-group">
+            <label class="form-label">标题 / 应用名称 *</label>
+            <input type="text" id="modal-item-title-input" class="form-input" placeholder="例如：GitHub, 微信, 哔哩哔哩" required />
+          </div>
+
+          <div class="form-group">
+            <label class="form-label">凭据分类</label>
+            <select id="modal-item-category" class="form-input">
+              <option value="login">Web / 移动 App 登录账号</option>
+              <option value="card">支付卡片 / 银行卡</option>
+              <option value="note">安全备忘录 / API 密钥</option>
+            </select>
+          </div>
+
+          <div class="form-group">
+            <label class="form-label">账号 / 用户名 / 手机号</label>
+            <input type="text" id="modal-item-username" class="form-input" placeholder="例如：user@example.com" />
+          </div>
+
+          <div class="form-group">
+            <label class="form-label">密码</label>
+            <input type="text" id="modal-item-password" class="form-input font-mono" placeholder="输入密码或使用强密码生成器..." />
+          </div>
+
+          <div class="form-group">
+            <label class="form-label">网址 (URL)</label>
+            <input type="text" id="modal-item-url" class="form-input" placeholder="例如：github.com" />
+          </div>
+
+          <div class="form-group">
+            <label class="form-label">2FA 密钥 (Base32 TOTP Secret)</label>
+            <input type="text" id="modal-item-totp" class="form-input font-mono" placeholder="可选，用于计算 30 秒动态验证码" />
+          </div>
+
+          <div class="form-group">
+            <label class="form-label">安全笔记 / 备注</label>
+            <textarea id="modal-item-notes" class="form-input" rows="3" placeholder="密保问题答案、Pin 码或补充说明..."></textarea>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary btn-close-modal">取消</button>
+          <button type="submit" class="btn btn-primary">加密保存</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- ------------------------------------------------------------------------
+       Password Generator Modal
+       ------------------------------------------------------------------------ -->
+  <div class="modal-overlay" id="generator-modal">
+    <div class="modal-container">
+      <div class="modal-header">
+        <h3 class="modal-title">强密码生成器</h3>
+        <button class="btn-icon btn-close-modal"><i data-lucide="x"></i></button>
+      </div>
+      <div class="modal-body">
+        <div class="form-group">
+          <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px;">
+            <span class="form-label">生成的随机密码</span>
+            <span id="gen-strength-badge" style="font-size: 12px; padding: 2px 8px; border-radius: var(--radius-full);"></span>
+          </div>
+          <div style="display: flex; gap: 8px;">
+            <input type="text" id="gen-result-input" class="form-input font-mono" readonly style="font-size: 18px; text-align: center; font-weight: 600;" />
+            <button class="btn btn-secondary" id="btn-regen-pwd" title="重新生成"><i data-lucide="refresh-cw"></i></button>
+          </div>
+        </div>
+
+        <div class="form-group" style="margin-top: 20px;">
+          <div style="display: flex; justify-content: space-between; margin-bottom: 8px;">
+            <span class="form-label">密码长度: <strong id="gen-length-val">16</strong> 位</span>
+          </div>
+          <input type="range" id="gen-length" min="8" max="64" value="16" style="width: 100%; accent-color: var(--primary);" />
+        </div>
+
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-top: 16px;">
+          <label style="display: flex; align-items: center; gap: 8px; font-size: 14px; cursor: pointer;">
+            <input type="checkbox" id="gen-upper" checked style="accent-color: var(--primary);" /> 大写字母 (A-Z)
+          </label>
+          <label style="display: flex; align-items: center; gap: 8px; font-size: 14px; cursor: pointer;">
+            <input type="checkbox" id="gen-lower" checked style="accent-color: var(--primary);" /> 小写字母 (a-z)
+          </label>
+          <label style="display: flex; align-items: center; gap: 8px; font-size: 14px; cursor: pointer;">
+            <input type="checkbox" id="gen-num" checked style="accent-color: var(--primary);" /> 数字 (0-9)
+          </label>
+          <label style="display: flex; align-items: center; gap: 8px; font-size: 14px; cursor: pointer;">
+            <input type="checkbox" id="gen-symbol" checked style="accent-color: var(--primary);" /> 特殊字符 (!@#$)
+          </label>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary btn-close-modal">取消</button>
+        <button type="button" class="btn btn-primary" id="btn-apply-gen-pwd">套用此密码</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ------------------------------------------------------------------------
+       Import CSV Modal
+       ------------------------------------------------------------------------ -->
+  <div class="modal-overlay" id="import-modal">
+    <div class="modal-container">
+      <div class="modal-header">
+        <h3 class="modal-title">导入历史密码</h3>
+        <button class="btn-icon btn-close-modal"><i data-lucide="x"></i></button>
+      </div>
+      <div class="modal-body">
+        <p style="font-size: 14px; color: var(--text-muted); margin-bottom: 16px; line-height: 1.6;">
+          支持导入从 <strong>Chrome / Edge / Firefox 导出 CSV 文件</strong> 或 <strong>Bitwarden 导出的 JSON 格式备份</strong>。
+        </p>
+        <div class="form-group">
+          <label class="form-label">选择导出的文件 (.csv 或 .json)</label>
+          <input type="file" id="import-file-input" class="form-input" accept=".csv, .json" />
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary btn-close-modal">取消</button>
+        <button type="button" class="btn btn-primary" id="btn-execute-import">开始导入</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ------------------------------------------------------------------------
+       WebDAV & Gist Sync Settings Modal
+       ------------------------------------------------------------------------ -->
+  <div class="modal-overlay" id="sync-modal">
+    <div class="modal-container">
+      <div class="modal-header">
+        <h3 class="modal-title">跨端同步设置 (零服务器开销)</h3>
+        <button class="btn-icon btn-close-modal"><i data-lucide="x"></i></button>
+      </div>
+      <div class="modal-body">
+        <div class="form-group">
+          <label class="form-label">同步模式</label>
+          <select id="sync-mode-select" class="form-input">
+            <option value="local">纯本地离线模式 (不连接任何网盘)</option>
+            <option value="webdav">WebDAV 云盘同步 (坚果云 / OneDrive / Nextcloud)</option>
+            <option value="gist">GitHub Gist 私有同步</option>
+          </select>
+        </div>
+
+        <div style="border-top: 1px solid var(--border-color); padding-top: 16px; margin-top: 16px;">
+          <h4 style="font-size: 14px; font-weight: 600; margin-bottom: 12px;">WebDAV 设置</h4>
+          <div class="form-group">
+            <label class="form-label">WebDAV 服务器 URL</label>
+            <input type="text" id="webdav-url" class="form-input" placeholder="例如：https://dav.jianguoyun.com/dav/" />
+          </div>
+          <div class="form-group">
+            <label class="form-label">账号 / 邮箱</label>
+            <input type="text" id="webdav-user" class="form-input" placeholder="您的坚果云账号" />
+          </div>
+          <div class="form-group">
+            <label class="form-label">密码 / 应用独立授权码</label>
+            <input type="password" id="webdav-pwd" class="form-input" placeholder="坚果云生成的应用独立密码" />
+          </div>
+        </div>
+
+        <div style="border-top: 1px solid var(--border-color); padding-top: 16px; margin-top: 16px;">
+          <h4 style="font-size: 14px; font-weight: 600; margin-bottom: 12px;">GitHub Gist 设置</h4>
+          <div class="form-group">
+            <label class="form-label">GitHub Token (Personal Access Token)</label>
+            <input type="password" id="gist-token" class="form-input" placeholder="ghp_xxxx" />
+          </div>
+          <div class="form-group">
+            <label class="form-label">Gist ID (第一次留空自动创建)</label>
+            <input type="text" id="gist-id" class="form-input" placeholder="例如：a1b2c3d4..." />
+          </div>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary btn-close-modal">取消</button>
+        <button type="button" class="btn btn-primary" id="btn-save-sync-config">保存并测试同步</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Global Toast Notification Container -->
+  <div id="toast-container"></div>
+
+  <!-- Main App Script -->
+  <script type="module" src="js/app.js"></script>
+  <script>
+    // Register PWA Service Worker
+    if ('serviceWorker' in navigator) {
+      window.addEventListener('load', () => {
+        navigator.serviceWorker.register('sw.js').catch(err => {
+          console.warn('PWA ServiceWorker registration failed:', err);
+        });
+      });
+    }
+  </script>
+</body>
+</html>
