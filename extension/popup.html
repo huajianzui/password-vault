@@ -1,0 +1,130 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <title>CipherVault</title>
+  <link rel="stylesheet" href="popup.css" />
+</head>
+<body>
+  <div id="popup-app">
+    <!-- Top Header -->
+    <header class="header">
+      <div class="brand">
+        <img src="icons/icon48.png" class="brand-logo" alt="Logo" />
+        <span class="brand-text">CipherVault</span>
+      </div>
+      <div class="header-actions" id="unlocked-header-actions" style="display: none;">
+        <button class="icon-btn" id="btn-sync-now" title="立即云同步">🔄</button>
+        <button class="icon-btn" id="btn-lock" title="锁定保险库">🔒</button>
+      </div>
+    </header>
+
+    <!-- 1. Lock Screen View -->
+    <section id="view-lock" class="view">
+      <div class="lock-container">
+        <div class="lock-shield">🛡️</div>
+        <h2 id="lock-title" style="font-size: 16px; font-weight: 700; margin-bottom: 6px;">请输入主密码</h2>
+        <p id="lock-sub" style="font-size: 12px; color: #94a3b8; margin-bottom: 16px;">解密您的专属密码库</p>
+
+        <form id="form-unlock">
+          <input type="password" id="input-master-pwd" class="input-text" placeholder="主密码..." autofocus required />
+          <button type="submit" class="btn btn-primary" style="width: 100%; margin-top: 12px;">解锁保险库</button>
+        </form>
+      </div>
+    </section>
+
+    <!-- 2. Main Unlocked Vault View -->
+    <section id="view-vault" class="view" style="display: none;">
+      <!-- Matched Items for Current Tab -->
+      <div class="matched-section">
+        <div class="section-label">
+          <span>当前网站凭据</span>
+          <span id="current-host-tag" class="host-tag">loading...</span>
+        </div>
+        <div id="matched-items-list" class="items-list">
+          <!-- Injected dynamically -->
+        </div>
+      </div>
+
+      <!-- Search & Other Vault Items -->
+      <div class="all-section">
+        <div class="search-box">
+          <input type="text" id="input-search" class="input-text" placeholder="🔍 搜索所有账号..." />
+        </div>
+        <div id="all-items-list" class="items-list all-scroll">
+          <!-- Injected dynamically -->
+        </div>
+      </div>
+    </section>
+
+    <!-- 3. Generator View -->
+    <section id="view-generator" class="view" style="display: none;">
+      <div class="gen-box">
+        <div class="gen-result-wrapper">
+          <input type="text" id="gen-pwd-output" class="input-text font-mono" readonly />
+          <button class="btn btn-secondary" id="btn-gen-refresh">🔄</button>
+        </div>
+        <div style="margin-top: 14px;">
+          <div style="display: flex; justify-content: space-between; font-size: 12px; margin-bottom: 6px;">
+            <span>密码长度</span>
+            <span id="gen-len-label">16 位</span>
+          </div>
+          <input type="range" id="gen-len-slider" min="8" max="40" value="16" style="width: 100%;" />
+        </div>
+        <div class="gen-checkboxes">
+          <label><input type="checkbox" id="chk-upper" checked /> 大写字母</label>
+          <label><input type="checkbox" id="chk-lower" checked /> 小写字母</label>
+          <label><input type="checkbox" id="chk-num" checked /> 数字</label>
+          <label><input type="checkbox" id="chk-sym" checked /> 特殊符号</label>
+        </div>
+        <button class="btn btn-primary" id="btn-copy-gen-pwd" style="width: 100%; margin-top: 16px;">复制密码</button>
+      </div>
+    </section>
+
+    <!-- 4. Sync Settings View -->
+    <section id="view-sync" class="view" style="display: none;">
+      <div class="sync-box">
+        <div class="form-group">
+          <label class="form-label">同步模式</label>
+          <select id="sel-sync-mode" class="input-text">
+            <option value="local">本地模式</option>
+            <option value="gist">GitHub Gist 同步</option>
+            <option value="webdav">WebDAV 云盘同步</option>
+          </select>
+        </div>
+
+        <div id="box-gist-fields" class="form-group">
+          <label class="form-label">GitHub Token</label>
+          <input type="password" id="input-gist-token" class="input-text" placeholder="ghp_xxxx" />
+          <label class="form-label" style="margin-top: 8px;">Gist ID</label>
+          <input type="text" id="input-gist-id" class="input-text" placeholder="留空自动创建" />
+        </div>
+
+        <button class="btn btn-primary" id="btn-save-sync" style="width: 100%; margin-top: 16px;">保存配置并双向同步</button>
+        <div id="sync-status-msg" style="font-size: 11px; text-align: center; color: #94a3b8; margin-top: 10px;"></div>
+      </div>
+    </section>
+
+    <!-- Bottom Navigation Tabs (Visible when unlocked) -->
+    <nav class="bottom-nav" id="bottom-nav" style="display: none;">
+      <button class="nav-tab active" data-target="view-vault">
+        <span class="tab-icon">🔑</span>
+        <span>密码库</span>
+      </button>
+      <button class="nav-tab" data-target="view-generator">
+        <span class="tab-icon">⚡</span>
+        <span>生成器</span>
+      </button>
+      <button class="nav-tab" data-target="view-sync">
+        <span class="tab-icon">☁️</span>
+        <span>云同步</span>
+      </button>
+    </nav>
+
+    <!-- In-popup Toast Notification -->
+    <div id="popup-toast" class="toast"></div>
+  </div>
+
+  <script type="module" src="popup.js"></script>
+</body>
+</html>
