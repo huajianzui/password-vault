@@ -1,9 +1,8 @@
 /**
- * CipherVault Content Script - Intelligent Autofill & In-Page Multi-Role Selector
+ * CipherVault Content Script - Intelligent Autofill & Robust Real-time Capture
  */
 
 (function () {
-  let hasPromptedThisForm = false;
   let lastFilledData = null;
   let cachedMatchedAccounts = [];
   let latestTyped = { username: '', password: '', time: 0 };
@@ -221,6 +220,18 @@
     );
   }
 
+  // Track keystrokes in real-time
+  function handleInputTyping() {
+    const { usernameInput, passwordInput } = findFields();
+    if (passwordInput && passwordInput.value) {
+      latestTyped = {
+        username: usernameInput ? usernameInput.value.trim() : '',
+        password: passwordInput.value,
+        time: Date.now()
+      };
+    }
+  }
+
   // Attach focus & typing listeners to all inputs
   function bindInputEvents() {
     const inputs = document.querySelectorAll('input');
@@ -228,17 +239,9 @@
       if (input.__cv_bound) return;
       input.__cv_bound = true;
 
-      // Track typing
-      input.addEventListener('input', () => {
-        const { usernameInput, passwordInput } = findFields();
-        if (passwordInput && passwordInput.value) {
-          latestTyped = {
-            username: usernameInput ? usernameInput.value : '',
-            password: passwordInput.value,
-            time: Date.now()
-          };
-        }
-      });
+      // Track typing on every input
+      input.addEventListener('input', handleInputTyping);
+      input.addEventListener('change', handleInputTyping);
 
       // Show dropdown on focus & click
       const type = (input.type || '').toLowerCase();
@@ -259,9 +262,6 @@
 
   // Display floating capture banner
   function showCaptureBanner(username, password) {
-    if (hasPromptedThisForm) return;
-    hasPromptedThisForm = true;
-
     const existing = document.getElementById('ciphervault-capture-banner');
     if (existing) existing.remove();
 
@@ -274,7 +274,7 @@
       <div class="cv-banner-icon">🛡️</div>
       <div class="cv-banner-content">
         <div class="cv-banner-title">CipherVault 提示保存新账号</div>
-        <div class="cv-banner-sub">${escapeHtml(username || '当前账号')} (${escapeHtml(hostname)})</div>
+        <div class="cv-banner-sub"><b>${escapeHtml(username || '当前账号')}</b> (${escapeHtml(hostname)})</div>
       </div>
       <div class="cv-banner-actions">
         <button class="cv-btn cv-btn-save" id="cv-btn-save">保存</button>
@@ -284,7 +284,8 @@
 
     document.documentElement.appendChild(banner);
 
-    document.getElementById('cv-btn-save').addEventListener('click', () => {
+    document.getElementById('cv-btn-save').addEventListener('click', (e) => {
+      e.stopPropagation();
       safeSendMessage({
         action: 'captureCredential',
         data: {
@@ -299,6 +300,7 @@
         <div class="cv-banner-icon">✅</div>
         <div class="cv-banner-content">
           <div class="cv-banner-title">已保存到 CipherVault！</div>
+          <div class="cv-banner-sub">${escapeHtml(username)}</div>
         </div>
       `;
       setTimeout(() => {
@@ -307,7 +309,8 @@
       }, 1200);
     });
 
-    document.getElementById('cv-btn-ignore').addEventListener('click', () => {
+    document.getElementById('cv-btn-ignore').addEventListener('click', (e) => {
+      e.stopPropagation();
       banner.style.animation = 'cvSlideOut 0.2s forwards';
       setTimeout(() => banner.remove(), 200);
     });
@@ -320,14 +323,16 @@
     }, 10000);
   }
 
-  // Trigger capture check instantly
+  // Trigger capture check instantly on login
   function triggerCapturePrompt() {
-    if (hasPromptedThisForm || !isExtensionValid()) return;
+    if (!isExtensionValid()) return;
 
+    // Immediately read inputs
     const { usernameInput, passwordInput } = findFields();
-    let username = usernameInput ? usernameInput.value : '';
+    let username = usernameInput ? usernameInput.value.trim() : '';
     let password = passwordInput ? passwordInput.value : '';
 
+    // Fallback to latest typed values if input was reset during submit
     if (!password && latestTyped.password && (Date.now() - latestTyped.time < 60000)) {
       password = latestTyped.password;
       username = username || latestTyped.username;
@@ -335,6 +340,7 @@
 
     if (!password) return;
 
+    // If identical to what we just autofilled, skip
     if (lastFilledData && lastFilledData.password === password && lastFilledData.username === username) {
       return;
     }
@@ -384,7 +390,7 @@
     const text = (target.textContent || target.value || '').trim();
     const isLoginText = /登\s*录|Sign\s*in|Log\s*in|Submit|确定|下一步/i.test(text);
 
-    if (isButton && (target.type === 'submit' || isLoginText || target.closest('form'))) {
+    if (isButton && (target.type === 'submit' || isLoginText || target.closest('form') || target.closest('.login-form') || target.closest('#login-form'))) {
       triggerCapturePrompt();
     }
   }, true);
