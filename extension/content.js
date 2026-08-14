@@ -7,6 +7,27 @@
   let lastFilledData = null;
   let cachedMatchedAccounts = [];
 
+  // Check if extension context is currently active & valid
+  function isExtensionValid() {
+    return typeof chrome !== 'undefined' && chrome.runtime && !!chrome.runtime.id;
+  }
+
+  // Safe wrapper for chrome.runtime.sendMessage
+  function safeSendMessage(message, callback) {
+    if (!isExtensionValid()) return;
+    try {
+      chrome.runtime.sendMessage(message, (response) => {
+        if (chrome.runtime.lastError) {
+          // Gracefully suppress invalidated context warnings after extension reloads
+          return;
+        }
+        if (callback) callback(response);
+      });
+    } catch (e) {
+      // Suppress extension reload / invalidation errors
+    }
+  }
+
   // Safe DOM input & change event dispatcher
   function setNativeValue(element, value) {
     if (!element || value === undefined || value === null) return;
@@ -168,25 +189,18 @@
 
   // Query background for matching accounts
   function checkAndSetupAutofill() {
-    try {
-      chrome.runtime.sendMessage(
-        { action: 'getAutofillData', url: window.location.href },
-        (response) => {
-          if (chrome.runtime.lastError || !response) return;
-
-          if (response.hasMatch && response.matchedAccounts) {
-            cachedMatchedAccounts = response.matchedAccounts;
-
-            // If exactly 1 account, auto-fill it directly on load
-            if (response.shouldAutoFillSingle && cachedMatchedAccounts.length === 1) {
-              performAutofill(cachedMatchedAccounts[0]);
-            }
+    safeSendMessage(
+      { action: 'getAutofillData', url: window.location.href },
+      (response) => {
+        if (!response) return;
+        if (response.hasMatch && response.matchedAccounts) {
+          cachedMatchedAccounts = response.matchedAccounts;
+          if (response.shouldAutoFillSingle && cachedMatchedAccounts.length === 1) {
+            performAutofill(cachedMatchedAccounts[0]);
           }
         }
-      );
-    } catch (e) {
-      // Extension context invalidated
-    }
+      }
+    );
   }
 
   // Attach focus listeners to inputs to display multi-account dropdown
@@ -197,13 +211,13 @@
       input.__cv_bound = true;
 
       input.addEventListener('focus', () => {
+        if (!isExtensionValid()) return;
         const type = (input.type || '').toLowerCase();
         if (['text', 'email', 'password', 'tel'].includes(type) || !input.type) {
           if (cachedMatchedAccounts.length > 0) {
             showInlineDropdown(input, cachedMatchedAccounts);
           } else {
-            // Re-fetch in case unlocked later
-            chrome.runtime.sendMessage(
+            safeSendMessage(
               { action: 'getAutofillData', url: window.location.href },
               (response) => {
                 if (response && response.hasMatch && response.matchedAccounts) {
@@ -254,7 +268,7 @@
     document.body.appendChild(banner);
 
     document.getElementById('cv-btn-save').addEventListener('click', () => {
-      chrome.runtime.sendMessage({
+      safeSendMessage({
         action: 'captureCredential',
         data: {
           title: document.title || hostname,
@@ -269,7 +283,7 @@
     });
 
     document.getElementById('cv-btn-ignore').addEventListener('click', () => {
-      chrome.runtime.sendMessage({
+      safeSendMessage({
         action: 'dismissCapture',
         data: { username, url: window.location.href }
       });
@@ -288,7 +302,7 @@
   // Handle Form Capture safely
   let submitDebounceTimer = null;
   function handleFormSubmitCapture() {
-    if (hasPromptedThisSession) return;
+    if (hasPromptedThisSession || !isExtensionValid()) return;
 
     if (submitDebounceTimer) clearTimeout(submitDebounceTimer);
     submitDebounceTimer = setTimeout(() => {
@@ -303,32 +317,37 @@
           return;
         }
 
-        chrome.runtime.sendMessage(
+        safeSendMessage(
           {
             action: 'checkShouldCapture',
             data: { username, password, url: window.location.href }
           },
           (response) => {
-            if (chrome.runtime.lastError) return;
             if (response && response.shouldPrompt) {
               showCaptureBanner(username, password);
             }
           }
         );
       } catch (e) {
-        console.warn('Capture check error:', e);
+        // Suppress
       }
     }, 300);
   }
 
   // Listen for messages from popup
-  chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
-    if (request.action === 'autofill') {
-      const success = performAutofill(request.data);
-      sendResponse({ success });
-      return true;
+  if (isExtensionValid()) {
+    try {
+      chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
+        if (request.action === 'autofill') {
+          const success = performAutofill(request.data);
+          sendResponse({ success });
+          return true;
+        }
+      });
+    } catch (e) {
+      // Invalidation guard
     }
-  });
+  }
 
   // Track form submits
   document.addEventListener('submit', handleFormSubmitCapture, true);
@@ -341,7 +360,9 @@
 
   // Dynamic DOM observation
   const observer = new MutationObserver(() => {
-    bindInputFocusEvents();
+    if (isExtensionValid()) {
+      bindInputFocusEvents();
+    }
   });
 
   observer.observe(document.body || document.documentElement, {
