@@ -1,7 +1,121 @@
 /* ==========================================================================
-   CipherVault In-Page Autofill & Capture Banner Styles
+   CipherVault In-Page Autofill, Multi-Account Dropdown & Capture Styles
    ========================================================================== */
 
+/* --------------------------------------------------------------------------
+   1. Multi-Account In-Page Selector Dropdown
+   -------------------------------------------------------------------------- */
+#ciphervault-inline-dropdown {
+  position: absolute;
+  z-index: 2147483647;
+  width: 280px;
+  max-width: 90vw;
+  background-color: #0f172a;
+  color: #f8fafc;
+  border-radius: 12px;
+  border: 1px solid rgba(99, 102, 241, 0.4);
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.6), 0 0 15px rgba(99, 102, 241, 0.2);
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  font-size: 13px;
+  overflow: hidden;
+  user-select: none;
+  animation: cvDropIn 0.2s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+@keyframes cvDropIn {
+  from { opacity: 0; transform: translateY(-8px) scale(0.98); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+.cv-drop-header {
+  padding: 8px 12px;
+  background-color: #0b1329;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  font-size: 11px;
+  font-weight: 600;
+  color: #94a3b8;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  text-transform: uppercase;
+}
+
+.cv-drop-list {
+  max-height: 220px;
+  overflow-y: auto;
+  padding: 4px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.cv-drop-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 10px;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+.cv-drop-item:hover {
+  background-color: rgba(99, 102, 241, 0.15);
+}
+
+.cv-item-info {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.cv-item-title-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.cv-item-name {
+  font-weight: 600;
+  color: #f8fafc;
+  font-size: 13px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.cv-item-role-tag {
+  background: linear-gradient(135deg, rgba(99, 102, 241, 0.2), rgba(6, 182, 212, 0.2));
+  border: 1px solid rgba(99, 102, 241, 0.4);
+  color: #818cf8;
+  padding: 1px 5px;
+  border-radius: 4px;
+  font-size: 10px;
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+.cv-item-user {
+  font-size: 11px;
+  color: #94a3b8;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.cv-item-action {
+  background-color: #6366f1;
+  color: #fff;
+  padding: 4px 8px;
+  border-radius: 6px;
+  font-size: 11px;
+  font-weight: 600;
+  flex-shrink: 0;
+}
+
+/* --------------------------------------------------------------------------
+   2. Floating Capture Prompt Banner
+   -------------------------------------------------------------------------- */
 #ciphervault-capture-banner {
   position: fixed;
   top: 20px;

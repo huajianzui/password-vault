@@ -6,7 +6,6 @@ let unlockedVaultItems = [];
 let dismissedCaptures = new Set();
 
 chrome.runtime.onInstalled.addListener(() => {
-  // Create Context Menus
   try {
     chrome.contextMenus.create({
       id: 'ciphervault_root',
@@ -28,7 +27,7 @@ chrome.runtime.onInstalled.addListener(() => {
       contexts: ['editable']
     });
   } catch (e) {
-    console.warn('Context menu creation error:', e);
+    console.warn('Context menu error:', e);
   }
 });
 
@@ -68,19 +67,33 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     return true;
   }
 
-  // 2. Content script asks for autofill data on page load
+  // 2. Content script asks for all matching accounts for current website
   if (request.action === 'getAutofillData') {
     const url = request.url;
-    const matched = unlockedVaultItems.find(item => !item.trash && matchDomain(url, item));
-    if (matched) {
-      sendResponse({ shouldAutofill: true, data: { username: matched.username, password: matched.password } });
+    const matchedList = unlockedVaultItems.filter(item => !item.trash && matchDomain(url, item));
+
+    if (matchedList.length > 0) {
+      sendResponse({
+        hasMatch: true,
+        count: matchedList.length,
+        // Only auto-fill silently if there's exactly 1 account. If multiple accounts, user chooses via dropdown.
+        shouldAutoFillSingle: matchedList.length === 1,
+        matchedAccounts: matchedList.map(item => ({
+          id: item.id,
+          title: item.title,
+          role: item.role || item.title || '默认角色',
+          username: item.username,
+          password: item.password,
+          totpSecret: item.totpSecret
+        }))
+      });
     } else {
-      sendResponse({ shouldAutofill: false });
+      sendResponse({ hasMatch: false, count: 0, matchedAccounts: [] });
     }
     return true;
   }
 
-  // 3. Content script checks if capture prompt should be displayed (Deduplication)
+  // 3. Content script checks if capture prompt should be displayed
   if (request.action === 'checkShouldCapture') {
     const { username, password, url } = request.data;
     const sessionKey = `${url}:${username}`;
@@ -90,7 +103,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
       return true;
     }
 
-    // Check if already in vault
+    // Check if identical account already exists in vault
     const alreadySaved = unlockedVaultItems.some(item => {
       if (item.trash) return false;
       const isSameHost = matchDomain(url, item);
@@ -108,13 +121,12 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     return true;
   }
 
-  // 4. Save captured credential & remember dismissal for session
+  // 4. Save captured credential & remember dismissal
   if (request.action === 'captureCredential') {
     const { username, password, url } = request.data;
     const sessionKey = `${url}:${username}`;
     dismissedCaptures.add(sessionKey);
 
-    // Save pending capture to storage
     chrome.storage.local.get(['ciphervault_pending_captures'], (result) => {
       const pending = result.ciphervault_pending_captures || [];
       const isDuplicate = pending.some(
@@ -126,7 +138,6 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
       }
     });
 
-    // Also cache in current background list
     unlockedVaultItems.push(request.data);
     sendResponse({ success: true });
     return true;

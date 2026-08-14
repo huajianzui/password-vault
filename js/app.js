@@ -161,9 +161,6 @@ class AppController {
     }
   }
 
-  /**
-   * Auto push on item save/edit/delete
-   */
   async autoSyncPush() {
     const cfg = this.store.syncConfig;
     if (!cfg || cfg.mode === 'local') return;
@@ -263,9 +260,10 @@ class AppController {
         const q = this.searchQuery.toLowerCase();
         const titleMatch = (item.title || '').toLowerCase().includes(q);
         const userMatch = (item.username || '').toLowerCase().includes(q);
+        const roleMatch = (item.role || '').toLowerCase().includes(q);
         const urlMatch = (item.url || '').toLowerCase().includes(q);
         const tagMatch = (item.tags || []).some(t => t.toLowerCase().includes(q));
-        return titleMatch || userMatch || urlMatch || tagMatch;
+        return titleMatch || userMatch || roleMatch || urlMatch || tagMatch;
       }
 
       return true;
@@ -291,10 +289,14 @@ class AppController {
         ? `<img src="${iconUrl}" onerror="this.onerror=null; this.src=''; this.parentNode.innerHTML='<i data-lucide=\\'key\\'></i>';" />`
         : `<i data-lucide="${this.getCategoryIcon(item.category)}"></i>`;
 
+      const roleBadge = item.role
+        ? `<span style="background: rgba(99, 102, 241, 0.2); color: #818cf8; border: 1px solid rgba(99, 102, 241, 0.3); padding: 1px 6px; border-radius: 4px; font-size: 11px; font-weight: 500; margin-left: 6px;">${this.escapeHtml(item.role)}</span>`
+        : '';
+
       card.innerHTML = `
         <div class="item-icon">${iconHtml}</div>
         <div class="item-meta">
-          <div class="item-title">${this.escapeHtml(item.title || '未命名')}</div>
+          <div class="item-title">${this.escapeHtml(item.title || '未命名')}${roleBadge}</div>
           <div class="item-sub">${this.escapeHtml(item.username || item.url || '暂无账号名')}</div>
         </div>
         ${item.favorite ? `<i data-lucide="star" style="width: 16px; height: 16px; color: #f59e0b; fill: #f59e0b;"></i>` : ''}
@@ -321,6 +323,10 @@ class AppController {
       ? `<img src="${iconUrl}" style="width: 36px; height: 36px; object-fit: contain;" />`
       : `<i data-lucide="${this.getCategoryIcon(item.category)}"></i>`;
 
+    const roleBadge = item.role
+      ? `<span style="background: rgba(99, 102, 241, 0.2); color: #818cf8; border: 1px solid rgba(99, 102, 241, 0.3); padding: 2px 8px; border-radius: 6px; font-size: 12px; font-weight: 500; margin-left: 8px;">角色: ${this.escapeHtml(item.role)}</span>`
+      : '';
+
     pane.innerHTML = `
       <!-- Mobile Back Navigation Button -->
       <div class="mobile-back-bar">
@@ -333,7 +339,7 @@ class AppController {
         <div class="detail-title-block">
           <div class="detail-large-icon">${iconHtml}</div>
           <div>
-            <h1 class="detail-h1">${this.escapeHtml(item.title || '未命名条目')}</h1>
+            <h1 class="detail-h1">${this.escapeHtml(item.title || '未命名条目')}${roleBadge}</h1>
             <div class="detail-category-tag">${this.getCategoryLabel(item.category)} · 更新于 ${new Date(item.updatedAt).toLocaleDateString()}</div>
           </div>
         </div>
@@ -350,6 +356,13 @@ class AppController {
       </div>
 
       <div class="detail-section">
+        ${item.role ? `
+          <div class="field-box">
+            <span class="field-label">身份 / 角色</span>
+            <div class="field-content font-mono">${this.escapeHtml(item.role)}</div>
+          </div>
+        ` : ''}
+
         ${item.username ? `
           <div class="field-box">
             <div class="field-header">
@@ -518,6 +531,7 @@ class AppController {
     
     document.getElementById('modal-item-id').value = item ? item.id : '';
     document.getElementById('modal-item-title-input').value = item ? item.title : '';
+    document.getElementById('modal-item-role').value = item ? (item.role || '') : '';
     document.getElementById('modal-item-category').value = item ? item.category : 'login';
     document.getElementById('modal-item-username').value = item ? item.username : '';
     document.getElementById('modal-item-password').value = item ? item.password : '';
@@ -584,6 +598,7 @@ class AppController {
       e.preventDefault();
       const id = document.getElementById('modal-item-id').value;
       const title = document.getElementById('modal-item-title-input').value;
+      const role = document.getElementById('modal-item-role').value.trim();
       const category = document.getElementById('modal-item-category').value;
       const username = document.getElementById('modal-item-username').value;
       const password = document.getElementById('modal-item-password').value;
@@ -595,6 +610,7 @@ class AppController {
         id: id || null,
         category,
         title,
+        role,
         username,
         password,
         url,
@@ -621,7 +637,7 @@ class AppController {
         nav.classList.add('active');
         this.currentCategory = nav.dataset.category;
         this.renderVaultList();
-        this.closeSidebarDrawer(); // Close drawer on mobile upon selection
+        this.closeSidebarDrawer();
       });
     });
 

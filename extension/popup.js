@@ -126,7 +126,7 @@ class PopupController {
   renderVaultView() {
     document.getElementById('current-host-tag').textContent = this.currentHost || '非网页标签';
 
-    // 1. Matched items for current website
+    // 1. Matched items for current website (Multiple accounts)
     const matchedContainer = document.getElementById('matched-items-list');
     matchedContainer.innerHTML = '';
 
@@ -153,6 +153,7 @@ class PopupController {
       if (!q) return true;
       return (item.title || '').toLowerCase().includes(q) ||
              (item.username || '').toLowerCase().includes(q) ||
+             (item.role || '').toLowerCase().includes(q) ||
              (item.url || '').toLowerCase().includes(q);
     });
 
@@ -170,13 +171,18 @@ class PopupController {
     const card = document.createElement('div');
     card.className = 'card-item';
 
+    const roleText = item.role || (item.title !== this.currentHost ? item.title : '');
+    const roleTag = roleText
+      ? `<span style="background: rgba(99,102,241,0.2); color: #818cf8; border: 1px solid rgba(99,102,241,0.3); padding: 1px 5px; border-radius: 4px; font-size: 10px; margin-left: 6px;">${this.escapeHtml(roleText)}</span>`
+      : '';
+
     card.innerHTML = `
       <div class="card-meta">
-        <div class="card-title">${this.escapeHtml(item.title || '未命名')}</div>
+        <div class="card-title">${this.escapeHtml(item.title || '未命名')}${roleTag}</div>
         <div class="card-sub">${this.escapeHtml(item.username || '无用户名')}</div>
       </div>
       <div class="card-actions">
-        <button class="btn btn-fill btn-card-fill" title="自动填充此账号密码">⚡ 填充</button>
+        <button class="btn btn-fill btn-card-fill" title="选择并填入此账号">⚡ 填充</button>
         ${item.totpSecret ? `<button class="icon-btn btn-card-totp" title="复制 2FA 动态码">🔑</button>` : ''}
         <button class="icon-btn btn-card-user" title="复制账号">👤</button>
         <button class="icon-btn btn-card-pwd" title="复制密码">📋</button>
@@ -207,7 +213,6 @@ class PopupController {
 
         let filled = await sendFillMsg();
         if (!filled) {
-          // If script was not injected on existing tab, inject it on-demand
           try {
             await chrome.scripting.executeScript({
               target: { tabId: this.currentTab.id },
@@ -220,7 +225,7 @@ class PopupController {
         }
 
         if (filled) {
-          this.showToast('已成功填充账号与密码！');
+          this.showToast(`已填入账号: ${item.username}`);
           setTimeout(() => window.close(), 600);
         } else {
           this.showToast('未能定位到可填充的输入框');

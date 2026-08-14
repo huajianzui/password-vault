@@ -1,10 +1,11 @@
 /**
- * CipherVault Content Script - Intelligent Autofill & Single-Trigger Capture
+ * CipherVault Content Script - Multi-Account In-Page Selector & Autofill
  */
 
 (function () {
   let hasPromptedThisSession = false;
   let lastFilledData = null;
+  let cachedMatchedAccounts = [];
 
   // Safe DOM input & change event dispatcher
   function setNativeValue(element, value) {
@@ -27,7 +28,6 @@
         element.value = value;
       }
 
-      // Fire full spectrum of input events for Vue/React/Angular
       element.dispatchEvent(new Event('input', { bubbles: true, cancelable: true }));
       element.dispatchEvent(new Event('change', { bubbles: true, cancelable: true }));
       element.dispatchEvent(new KeyboardEvent('keydown', { bubbles: true }));
@@ -45,16 +45,14 @@
     return style.display !== 'none' && style.visibility !== 'hidden' && style.opacity !== '0' && el.offsetWidth > 0;
   }
 
-  // Smart Form & Input Field Locator
+  // Locate username & password inputs
   function findFields() {
-    // 1. Locate all password inputs
     const passwordInputs = Array.from(
       document.querySelectorAll('input[type="password"], input[name*="password" i], input[id*="password" i], input[autocomplete="current-password"], input[autocomplete="new-password"]')
     ).filter(isElementVisible);
 
     const passwordInput = passwordInputs.length > 0 ? passwordInputs[0] : null;
 
-    // 2. Locate username / email / account input
     let usernameInput = null;
     if (passwordInput) {
       const form = passwordInput.closest('form') || document.body;
@@ -63,7 +61,6 @@
       ).filter(isElementVisible);
 
       if (candidates.length > 0) {
-        // Look for username-like name/id/autocomplete first
         const explicitUsername = candidates.find(c => {
           const name = (c.name || '').toLowerCase();
           const id = (c.id || '').toLowerCase();
@@ -76,7 +73,6 @@
         usernameInput = explicitUsername || candidates[candidates.length - 1];
       }
     } else {
-      // Standalone username step
       const candidates = Array.from(
         document.querySelectorAll('input[autocomplete="username"], input[name*="user" i], input[name*="login" i], input[type="email"]')
       ).filter(isElementVisible);
@@ -86,10 +82,10 @@
     return { usernameInput, passwordInput };
   }
 
-  // Execute Autofill
-  function performAutofill(data) {
-    if (!data) return false;
-    const { username, password } = data;
+  // Perform Autofill with a specific account
+  function performAutofill(account) {
+    if (!account) return false;
+    const { username, password } = account;
     const { usernameInput, passwordInput } = findFields();
 
     let filledCount = 0;
@@ -108,38 +104,126 @@
     return filledCount > 0;
   }
 
-  // Automatic Background Autofill on page load
-  function tryAutoFillOnLoad() {
+  // Remove in-page dropdown
+  function hideInlineDropdown() {
+    const existing = document.getElementById('ciphervault-inline-dropdown');
+    if (existing) existing.remove();
+  }
+
+  // Show in-page multi-account selector dropdown
+  function showInlineDropdown(targetInput, accounts) {
+    if (!targetInput || !accounts || accounts.length === 0) return;
+    hideInlineDropdown();
+
+    const rect = targetInput.getBoundingClientRect();
+    const dropdown = document.createElement('div');
+    dropdown.id = 'ciphervault-inline-dropdown';
+
+    const top = window.scrollY + rect.bottom + 6;
+    const left = window.scrollX + rect.left;
+
+    dropdown.style.top = `${top}px`;
+    dropdown.style.left = `${left}px`;
+
+    dropdown.innerHTML = `
+      <div class="cv-drop-header">
+        <span>🛡️ 选择回填账号 / 角色 (${accounts.length})</span>
+      </div>
+      <div class="cv-drop-list">
+        ${accounts.map((acc, index) => `
+          <div class="cv-drop-item" data-index="${index}">
+            <div class="cv-item-info">
+              <div class="cv-item-title-row">
+                <span class="cv-item-name">${escapeHtml(acc.title || '未命名')}</span>
+                <span class="cv-item-role-tag">${escapeHtml(acc.role || acc.title || '角色')}</span>
+              </div>
+              <span class="cv-item-user">${escapeHtml(acc.username || '无账号名')}</span>
+            </div>
+            <button class="cv-item-action">填入</button>
+          </div>
+        `).join('')}
+      </div>
+    `;
+
+    document.body.appendChild(dropdown);
+
+    // Bind click events on account rows
+    dropdown.querySelectorAll('.cv-drop-item').forEach(itemEl => {
+      itemEl.addEventListener('mousedown', (e) => {
+        e.preventDefault();
+        const index = parseInt(itemEl.dataset.index, 10);
+        const selectedAccount = accounts[index];
+        if (selectedAccount) {
+          performAutofill(selectedAccount);
+        }
+        hideInlineDropdown();
+      });
+    });
+  }
+
+  function escapeHtml(str) {
+    if (!str) return '';
+    return str.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+  }
+
+  // Query background for matching accounts
+  function checkAndSetupAutofill() {
     try {
       chrome.runtime.sendMessage(
         { action: 'getAutofillData', url: window.location.href },
         (response) => {
-          if (chrome.runtime.lastError) return;
-          if (response && response.shouldAutofill && response.data) {
-            performAutofill(response.data);
+          if (chrome.runtime.lastError || !response) return;
+
+          if (response.hasMatch && response.matchedAccounts) {
+            cachedMatchedAccounts = response.matchedAccounts;
+
+            // If exactly 1 account, auto-fill it directly on load
+            if (response.shouldAutoFillSingle && cachedMatchedAccounts.length === 1) {
+              performAutofill(cachedMatchedAccounts[0]);
+            }
           }
         }
       );
     } catch (e) {
-      // Extension context invalidated or inactive
+      // Extension context invalidated
     }
   }
 
-  // Observe dynamically loaded login modals (React / Vue SPAs)
-  let fillAttempts = 0;
-  const observer = new MutationObserver(() => {
-    if (fillAttempts < 5) {
-      const { passwordInput } = findFields();
-      if (passwordInput && !passwordInput.value) {
-        fillAttempts++;
-        tryAutoFillOnLoad();
-      }
-    }
-  });
+  // Attach focus listeners to inputs to display multi-account dropdown
+  function bindInputFocusEvents() {
+    const inputs = document.querySelectorAll('input');
+    inputs.forEach(input => {
+      if (input.__cv_bound) return;
+      input.__cv_bound = true;
 
-  observer.observe(document.body || document.documentElement, {
-    childList: true,
-    subtree: true
+      input.addEventListener('focus', () => {
+        const type = (input.type || '').toLowerCase();
+        if (['text', 'email', 'password', 'tel'].includes(type) || !input.type) {
+          if (cachedMatchedAccounts.length > 0) {
+            showInlineDropdown(input, cachedMatchedAccounts);
+          } else {
+            // Re-fetch in case unlocked later
+            chrome.runtime.sendMessage(
+              { action: 'getAutofillData', url: window.location.href },
+              (response) => {
+                if (response && response.hasMatch && response.matchedAccounts) {
+                  cachedMatchedAccounts = response.matchedAccounts;
+                  showInlineDropdown(input, cachedMatchedAccounts);
+                }
+              }
+            );
+          }
+        }
+      });
+    });
+  }
+
+  // Dismiss dropdown on outside click
+  document.addEventListener('mousedown', (e) => {
+    const dropdown = document.getElementById('ciphervault-inline-dropdown');
+    if (dropdown && !dropdown.contains(e.target)) {
+      hideInlineDropdown();
+    }
   });
 
   // Display floating capture banner (Strictly once per session)
@@ -158,7 +242,7 @@
     banner.innerHTML = `
       <div class="cv-banner-icon">🛡️</div>
       <div class="cv-banner-content">
-        <div class="cv-banner-title">CipherVault 提示保存账号</div>
+        <div class="cv-banner-title">CipherVault 提示保存新账号</div>
         <div class="cv-banner-sub">${username || '当前账号'} (${hostname})</div>
       </div>
       <div class="cv-banner-actions">
@@ -193,7 +277,6 @@
       setTimeout(() => banner.remove(), 200);
     });
 
-    // Auto dismiss after 8s
     setTimeout(() => {
       if (document.body.contains(banner)) {
         banner.style.animation = 'cvSlideOut 0.2s forwards';
@@ -216,12 +299,10 @@
 
         if (!password) return;
 
-        // If this matches what we just autofilled, no need to prompt
         if (lastFilledData && lastFilledData.password === password && lastFilledData.username === username) {
           return;
         }
 
-        // Ask background if this is already in the vault
         chrome.runtime.sendMessage(
           {
             action: 'checkShouldCapture',
@@ -240,7 +321,7 @@
     }, 300);
   }
 
-  // Listen for messages from popup or background
+  // Listen for messages from popup
   chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     if (request.action === 'autofill') {
       const success = performAutofill(request.data);
@@ -249,20 +330,34 @@
     }
   });
 
-  // Track form submits & login button clicks
+  // Track form submits
   document.addEventListener('submit', handleFormSubmitCapture, true);
   document.addEventListener('click', (e) => {
     const target = e.target;
-    if (target && (target.type === 'submit' || target.matches('button[type="submit"], input[type="submit"], button:not([type])'))) {
+    if (target && (target.type === 'submit' || target.matches('button[type="submit"], input[type="submit"]'))) {
       handleFormSubmitCapture();
     }
   }, true);
 
-  // Initial trigger after DOM loads
+  // Dynamic DOM observation
+  const observer = new MutationObserver(() => {
+    bindInputFocusEvents();
+  });
+
+  observer.observe(document.body || document.documentElement, {
+    childList: true,
+    subtree: true
+  });
+
+  // Initial load
   if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', tryAutoFillOnLoad);
+    document.addEventListener('DOMContentLoaded', () => {
+      checkAndSetupAutofill();
+      bindInputFocusEvents();
+    });
   } else {
-    setTimeout(tryAutoFillOnLoad, 400);
+    checkAndSetupAutofill();
+    bindInputFocusEvents();
   }
 
 })();
