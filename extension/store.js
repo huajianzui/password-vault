@@ -198,17 +198,56 @@ export class VaultStore {
     return item;
   }
 
+  normalizeHost(urlOrHost) {
+    if (!urlOrHost) return '';
+    try {
+      let host = urlOrHost.trim().toLowerCase();
+      if (host.startsWith('http://') || host.startsWith('https://')) {
+        const parsed = new URL(host);
+        return parsed.hostname.replace(/^www\./, '');
+      }
+      return host.replace(/^(https?:\/\/)?(www\.)?/, '').split('/')[0].split(':')[0];
+    } catch (e) {
+      return urlOrHost.toLowerCase();
+    }
+  }
+
   findItemsByDomain(domain) {
     if (!domain) return [];
-    const cleanDomain = domain.toLowerCase().replace(/^(https?:\/\/)?(www\.)?/, '').split('/')[0];
-    const mainHost = cleanDomain.split('.').slice(-2).join('.'); // e.g. github.com
+    const currentHost = this.normalizeHost(domain);
+    if (!currentHost) return [];
 
     return this.items.filter(item => {
       if (item.trash) return false;
-      const itemUrl = (item.url || '').toLowerCase();
-      const itemTitle = (item.title || '').toLowerCase();
+      const itemHost = this.normalizeHost(item.url || '');
+      const itemTitle = (item.title || '').trim().toLowerCase();
 
-      return itemUrl.includes(mainHost) || itemUrl.includes(cleanDomain) || itemTitle.includes(mainHost) || cleanDomain.includes(itemTitle);
+      // 1. Exact host match (handles IP, localhost, domains)
+      if (itemHost && (itemHost === currentHost || currentHost.includes(itemHost) || itemHost.includes(currentHost))) {
+        return true;
+      }
+
+      // 2. IP / Localhost check
+      const isIpOrLocal = currentHost === 'localhost' || /^(\d{1,3}\.){3}\d{1,3}$/.test(currentHost);
+      if (isIpOrLocal) {
+        return itemHost === currentHost || itemTitle.includes(currentHost) || currentHost.includes(itemTitle);
+      }
+
+      // 3. Domain suffix check for standard domains
+      const currentParts = currentHost.split('.');
+      const currentMainDomain = currentParts.slice(-2).join('.');
+      
+      if (itemHost) {
+        const itemParts = itemHost.split('.');
+        const itemMainDomain = itemParts.slice(-2).join('.');
+        if (currentMainDomain === itemMainDomain) return true;
+      }
+
+      if (itemTitle && (currentHost.includes(itemTitle) || itemTitle.includes(currentMainDomain))) {
+        return true;
+      }
+
+      return false;
     });
   }
 }

@@ -3,138 +3,145 @@
    ========================================================================== */
 
 /* --------------------------------------------------------------------------
-   1. Multi-Account In-Page Selector Dropdown
+   1. Multi-Account In-Page Selector Dropdown (Fixed Position)
    -------------------------------------------------------------------------- */
 #ciphervault-inline-dropdown {
-  position: absolute;
-  z-index: 2147483647;
-  width: 280px;
-  max-width: 90vw;
-  background-color: #0f172a;
-  color: #f8fafc;
-  border-radius: 12px;
-  border: 1px solid rgba(99, 102, 241, 0.4);
-  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.6), 0 0 15px rgba(99, 102, 241, 0.2);
-  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-  font-size: 13px;
-  overflow: hidden;
-  user-select: none;
-  animation: cvDropIn 0.2s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+  position: fixed !important;
+  z-index: 2147483647 !important;
+  width: 320px !important;
+  max-width: 92vw !important;
+  background-color: #0f172a !important;
+  color: #f8fafc !important;
+  border-radius: 12px !important;
+  border: 1px solid rgba(99, 102, 241, 0.5) !important;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.7), 0 0 20px rgba(99, 102, 241, 0.3) !important;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif !important;
+  font-size: 13px !important;
+  overflow: hidden !important;
+  user-select: none !important;
+  animation: cvDropIn 0.18s cubic-bezier(0.16, 1, 0.3, 1) forwards !important;
 }
 
 @keyframes cvDropIn {
-  from { opacity: 0; transform: translateY(-8px) scale(0.98); }
+  from { opacity: 0; transform: translateY(-6px) scale(0.98); }
   to { opacity: 1; transform: translateY(0) scale(1); }
 }
 
 .cv-drop-header {
-  padding: 8px 12px;
-  background-color: #0b1329;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
-  font-size: 11px;
-  font-weight: 600;
-  color: #94a3b8;
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  text-transform: uppercase;
+  padding: 8px 12px !important;
+  background-color: #0b1329 !important;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08) !important;
+  font-size: 11px !important;
+  font-weight: 600 !important;
+  color: #94a3b8 !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: space-between !important;
+  text-transform: uppercase !important;
 }
 
 .cv-drop-list {
-  max-height: 220px;
-  overflow-y: auto;
-  padding: 4px;
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
+  max-height: 240px !important;
+  overflow-y: auto !important;
+  padding: 4px !important;
+  display: flex !important;
+  flex-direction: column !important;
+  gap: 3px !important;
 }
 
 .cv-drop-item {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 8px 10px;
-  border-radius: 8px;
-  cursor: pointer;
-  transition: all 0.15s ease;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: space-between !important;
+  padding: 8px 10px !important;
+  border-radius: 8px !important;
+  cursor: pointer !important;
+  transition: background-color 0.15s ease !important;
 }
 .cv-drop-item:hover {
-  background-color: rgba(99, 102, 241, 0.15);
+  background-color: rgba(99, 102, 241, 0.18) !important;
 }
 
 .cv-item-info {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  min-width: 0;
+  display: flex !important;
+  flex-direction: column !important;
+  gap: 2px !important;
+  min-width: 0 !important;
+  flex: 1 !important;
+  margin-right: 8px !important;
 }
 
 .cv-item-title-row {
-  display: flex;
-  align-items: center;
-  gap: 6px;
+  display: flex !important;
+  align-items: center !important;
+  gap: 6px !important;
 }
 
 .cv-item-name {
-  font-weight: 600;
-  color: #f8fafc;
-  font-size: 13px;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  font-weight: 600 !important;
+  color: #f8fafc !important;
+  font-size: 13px !important;
+  white-space: nowrap !important;
+  overflow: hidden !important;
+  text-overflow: ellipsis !important;
 }
 
 .cv-item-role-tag {
-  background: linear-gradient(135deg, rgba(99, 102, 241, 0.2), rgba(6, 182, 212, 0.2));
-  border: 1px solid rgba(99, 102, 241, 0.4);
-  color: #818cf8;
-  padding: 1px 5px;
-  border-radius: 4px;
-  font-size: 10px;
-  font-weight: 500;
-  white-space: nowrap;
+  background: linear-gradient(135deg, rgba(99, 102, 241, 0.25), rgba(6, 182, 212, 0.25)) !important;
+  border: 1px solid rgba(99, 102, 241, 0.4) !important;
+  color: #818cf8 !important;
+  padding: 1px 6px !important;
+  border-radius: 4px !important;
+  font-size: 10px !important;
+  font-weight: 500 !important;
+  white-space: nowrap !important;
 }
 
 .cv-item-user {
-  font-size: 11px;
-  color: #94a3b8;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  font-size: 12px !important;
+  color: #94a3b8 !important;
+  white-space: nowrap !important;
+  overflow: hidden !important;
+  text-overflow: ellipsis !important;
 }
 
 .cv-item-action {
-  background-color: #6366f1;
-  color: #fff;
-  padding: 4px 8px;
-  border-radius: 6px;
-  font-size: 11px;
-  font-weight: 600;
-  flex-shrink: 0;
+  background-color: #6366f1 !important;
+  color: #ffffff !important;
+  padding: 5px 10px !important;
+  border-radius: 6px !important;
+  font-size: 11px !important;
+  font-weight: 600 !important;
+  border: none !important;
+  cursor: pointer !important;
+  flex-shrink: 0 !important;
+}
+.cv-item-action:hover {
+  background-color: #4f46e5 !important;
 }
 
 /* --------------------------------------------------------------------------
    2. Floating Capture Prompt Banner
    -------------------------------------------------------------------------- */
 #ciphervault-capture-banner {
-  position: fixed;
-  top: 20px;
-  right: 20px;
-  z-index: 2147483647;
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  background-color: #0f172a;
-  color: #f8fafc;
-  padding: 14px 18px;
-  border-radius: 12px;
-  border: 1px solid rgba(99, 102, 241, 0.4);
-  box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.6), 0 0 20px rgba(99, 102, 241, 0.25);
-  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-  font-size: 14px;
-  animation: cvSlideIn 0.3s cubic-bezier(0.16, 1, 0.3, 1) forwards;
-  user-select: none;
-  max-width: 400px;
+  position: fixed !important;
+  top: 20px !important;
+  right: 20px !important;
+  z-index: 2147483647 !important;
+  display: flex !important;
+  align-items: center !important;
+  gap: 12px !important;
+  background-color: #0f172a !important;
+  color: #f8fafc !important;
+  padding: 14px 18px !important;
+  border-radius: 12px !important;
+  border: 1px solid rgba(99, 102, 241, 0.4) !important;
+  box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.6), 0 0 20px rgba(99, 102, 241, 0.25) !important;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif !important;
+  font-size: 14px !important;
+  animation: cvSlideIn 0.3s cubic-bezier(0.16, 1, 0.3, 1) forwards !important;
+  user-select: none !important;
+  max-width: 400px !important;
 }
 
 @keyframes cvSlideIn {
@@ -148,62 +155,62 @@
 }
 
 .cv-banner-icon {
-  width: 32px;
-  height: 32px;
-  border-radius: 8px;
-  background: linear-gradient(135deg, #6366f1, #06b6d4);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  color: #fff;
-  font-weight: bold;
-  font-size: 16px;
-  flex-shrink: 0;
+  width: 32px !important;
+  height: 32px !important;
+  border-radius: 8px !important;
+  background: linear-gradient(135deg, #6366f1, #06b6d4) !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  color: #fff !important;
+  font-weight: bold !important;
+  font-size: 16px !important;
+  flex-shrink: 0 !important;
 }
 
 .cv-banner-content {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
+  flex: 1 !important;
+  display: flex !important;
+  flex-direction: column !important;
+  gap: 2px !important;
 }
 
 .cv-banner-title {
-  font-weight: 600;
-  color: #f8fafc;
-  font-size: 13px;
+  font-weight: 600 !important;
+  color: #f8fafc !important;
+  font-size: 13px !important;
 }
 
 .cv-banner-sub {
-  color: #94a3b8;
-  font-size: 12px;
+  color: #94a3b8 !important;
+  font-size: 12px !important;
 }
 
 .cv-banner-actions {
-  display: flex;
-  gap: 8px;
+  display: flex !important;
+  gap: 8px !important;
 }
 
 .cv-btn {
-  padding: 6px 12px;
-  font-size: 12px;
-  font-weight: 500;
-  border-radius: 6px;
-  border: none;
-  cursor: pointer;
-  outline: none;
-  transition: opacity 0.15s ease;
+  padding: 6px 12px !important;
+  font-size: 12px !important;
+  font-weight: 500 !important;
+  border-radius: 6px !important;
+  border: none !important;
+  cursor: pointer !important;
+  outline: none !important;
+  transition: opacity 0.15s ease !important;
 }
 .cv-btn:hover {
-  opacity: 0.9;
+  opacity: 0.9 !important;
 }
 
 .cv-btn-save {
-  background-color: #6366f1;
-  color: #ffffff;
+  background-color: #6366f1 !important;
+  color: #ffffff !important;
 }
 
 .cv-btn-ignore {
-  background-color: rgba(255, 255, 255, 0.1);
-  color: #94a3b8;
+  background-color: rgba(255, 255, 255, 0.1) !important;
+  color: #94a3b8 !important;
 }

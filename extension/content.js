@@ -1,5 +1,5 @@
 /**
- * CipherVault Content Script - Intelligent Autofill & Robust Real-time Capture
+ * CipherVault Content Script - Intelligent Autofill & In-Page Multi-Role Selector
  */
 
 (function () {
@@ -7,6 +7,7 @@
   let lastFilledData = null;
   let cachedMatchedAccounts = [];
   let latestTyped = { username: '', password: '', time: 0 };
+  let currentActiveInput = null;
 
   // Check if extension context is valid
   function isExtensionValid() {
@@ -137,8 +138,8 @@
     const dropdown = document.createElement('div');
     dropdown.id = 'ciphervault-inline-dropdown';
 
-    const top = window.scrollY + rect.bottom + 6;
-    const left = window.scrollX + rect.left;
+    const top = rect.bottom + 6;
+    const left = Math.max(10, Math.min(rect.left, window.innerWidth - 330));
 
     dropdown.style.top = `${top}px`;
     dropdown.style.left = `${left}px`;
@@ -146,6 +147,7 @@
     dropdown.innerHTML = `
       <div class="cv-drop-header">
         <span>🛡️ 选择回填账号 / 角色 (${accounts.length})</span>
+        <span style="cursor: pointer; opacity: 0.7;" id="cv-close-drop">✕</span>
       </div>
       <div class="cv-drop-list">
         ${accounts.map((acc, index) => `
@@ -153,7 +155,7 @@
             <div class="cv-item-info">
               <div class="cv-item-title-row">
                 <span class="cv-item-name">${escapeHtml(acc.title || '未命名')}</span>
-                <span class="cv-item-role-tag">${escapeHtml(acc.role || acc.title || '角色')}</span>
+                <span class="cv-item-role-tag">${escapeHtml(acc.role || acc.title || '默认角色')}</span>
               </div>
               <span class="cv-item-user">${escapeHtml(acc.username || '无账号名')}</span>
             </div>
@@ -163,11 +165,17 @@
       </div>
     `;
 
-    document.body.appendChild(dropdown);
+    document.documentElement.appendChild(dropdown);
+
+    document.getElementById('cv-close-drop').addEventListener('mousedown', (e) => {
+      e.stopPropagation();
+      hideInlineDropdown();
+    });
 
     dropdown.querySelectorAll('.cv-drop-item').forEach(itemEl => {
       itemEl.addEventListener('mousedown', (e) => {
         e.preventDefault();
+        e.stopPropagation();
         const index = parseInt(itemEl.dataset.index, 10);
         const selectedAccount = accounts[index];
         if (selectedAccount) {
@@ -199,14 +207,28 @@
     );
   }
 
-  // Attach focus listeners to inputs to display multi-account dropdown & track typing
+  // Handle focus or click on input fields
+  function handleInputFocus(input) {
+    currentActiveInput = input;
+    safeSendMessage(
+      { action: 'getAutofillData', url: window.location.href },
+      (response) => {
+        if (response && response.hasMatch && response.matchedAccounts && response.matchedAccounts.length > 0) {
+          cachedMatchedAccounts = response.matchedAccounts;
+          showInlineDropdown(input, cachedMatchedAccounts);
+        }
+      }
+    );
+  }
+
+  // Attach focus & typing listeners to all inputs
   function bindInputEvents() {
     const inputs = document.querySelectorAll('input');
     inputs.forEach(input => {
       if (input.__cv_bound) return;
       input.__cv_bound = true;
 
-      // Track typing in real-time
+      // Track typing
       input.addEventListener('input', () => {
         const { usernameInput, passwordInput } = findFields();
         if (passwordInput && passwordInput.value) {
@@ -218,33 +240,19 @@
         }
       });
 
-      // Show dropdown on focus
-      input.addEventListener('focus', () => {
-        if (!isExtensionValid()) return;
-        const type = (input.type || '').toLowerCase();
-        if (['text', 'email', 'password', 'tel'].includes(type) || !input.type) {
-          if (cachedMatchedAccounts.length > 0) {
-            showInlineDropdown(input, cachedMatchedAccounts);
-          } else {
-            safeSendMessage(
-              { action: 'getAutofillData', url: window.location.href },
-              (response) => {
-                if (response && response.hasMatch && response.matchedAccounts) {
-                  cachedMatchedAccounts = response.matchedAccounts;
-                  showInlineDropdown(input, cachedMatchedAccounts);
-                }
-              }
-            );
-          }
-        }
-      });
+      // Show dropdown on focus & click
+      const type = (input.type || '').toLowerCase();
+      if (['text', 'email', 'password', 'tel'].includes(type) || !input.type) {
+        input.addEventListener('focus', () => handleInputFocus(input));
+        input.addEventListener('click', () => handleInputFocus(input));
+      }
     });
   }
 
   // Dismiss dropdown on outside click
   document.addEventListener('mousedown', (e) => {
     const dropdown = document.getElementById('ciphervault-inline-dropdown');
-    if (dropdown && !dropdown.contains(e.target)) {
+    if (dropdown && !dropdown.contains(e.target) && e.target !== currentActiveInput) {
       hideInlineDropdown();
     }
   });
@@ -265,7 +273,7 @@
     banner.innerHTML = `
       <div class="cv-banner-icon">🛡️</div>
       <div class="cv-banner-content">
-        <div class="cv-banner-title">CipherVault 提示保存账号</div>
+        <div class="cv-banner-title">CipherVault 提示保存新账号</div>
         <div class="cv-banner-sub">${escapeHtml(username || '当前账号')} (${escapeHtml(hostname)})</div>
       </div>
       <div class="cv-banner-actions">
@@ -274,7 +282,7 @@
       </div>
     `;
 
-    document.body.appendChild(banner);
+    document.documentElement.appendChild(banner);
 
     document.getElementById('cv-btn-save').addEventListener('click', () => {
       safeSendMessage({
@@ -305,7 +313,7 @@
     });
 
     setTimeout(() => {
-      if (document.body.contains(banner)) {
+      if (document.documentElement.contains(banner)) {
         banner.style.animation = 'cvSlideOut 0.2s forwards';
         setTimeout(() => banner.remove(), 200);
       }
@@ -316,12 +324,10 @@
   function triggerCapturePrompt() {
     if (hasPromptedThisForm || !isExtensionValid()) return;
 
-    // Immediately read form values
     const { usernameInput, passwordInput } = findFields();
     let username = usernameInput ? usernameInput.value : '';
     let password = passwordInput ? passwordInput.value : '';
 
-    // Fallback to latest typed values if input was cleared on click
     if (!password && latestTyped.password && (Date.now() - latestTyped.time < 60000)) {
       password = latestTyped.password;
       username = username || latestTyped.username;
@@ -329,7 +335,6 @@
 
     if (!password) return;
 
-    // Check if this matches what we just autofilled
     if (lastFilledData && lastFilledData.password === password && lastFilledData.username === username) {
       return;
     }
@@ -375,7 +380,6 @@
     const target = e.target;
     if (!target) return;
 
-    // Check if target is a submit button or a login-related button/element
     const isButton = target.matches('button, input[type="button"], input[type="submit"], a, [role="button"]');
     const text = (target.textContent || target.value || '').trim();
     const isLoginText = /登\s*录|Sign\s*in|Log\s*in|Submit|确定|下一步/i.test(text);
@@ -392,7 +396,7 @@
     }
   });
 
-  observer.observe(document.body || document.documentElement, {
+  observer.observe(document.documentElement || document.body, {
     childList: true,
     subtree: true
   });
