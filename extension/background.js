@@ -95,7 +95,6 @@ async function getUnlockedItems() {
         return res.ciphervault_session_items;
       }
     }
-    // Fallback to local session storage cache
     const localRes = await chrome.storage.local.get('ciphervault_session_cache');
     return (localRes && Array.isArray(localRes.ciphervault_session_cache)) ? localRes.ciphervault_session_cache : [];
   } catch (e) {
@@ -122,21 +121,42 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     return true;
   }
 
-  // 2. Content script asks for matching accounts for current website
+  // 2. Content script asks for matching accounts for current website (With Strict Deduplication)
   if (request.action === 'getAutofillData') {
     getUnlockedItems().then(items => {
       const url = request.url;
       const matchedList = items.filter(item => !item.trash && matchDomain(url, item));
 
-      if (matchedList.length > 0) {
+      // Strict Deduplication: group by (username, role) and keep the latest updated entry
+      const uniqueMap = new Map();
+      matchedList.forEach(item => {
+        const u = (item.username || '').trim().toLowerCase();
+        const r = (item.role || '').trim().toLowerCase();
+        const key = `${u}:::${r}`;
+
+        if (!uniqueMap.has(key)) {
+          uniqueMap.set(key, item);
+        } else {
+          const existing = uniqueMap.get(key);
+          const existingTime = new Date(existing.updatedAt || 0).getTime();
+          const itemTime = new Date(item.updatedAt || 0).getTime();
+          if (itemTime >= existingTime) {
+            uniqueMap.set(key, item);
+          }
+        }
+      });
+
+      const uniqueMatched = Array.from(uniqueMap.values());
+
+      if (uniqueMatched.length > 0) {
         sendResponse({
           hasMatch: true,
-          count: matchedList.length,
-          shouldAutoFillSingle: matchedList.length === 1,
-          matchedAccounts: matchedList.map(item => ({
+          count: uniqueMatched.length,
+          shouldAutoFillSingle: uniqueMatched.length === 1,
+          matchedAccounts: uniqueMatched.map(item => ({
             id: item.id,
             title: item.title,
-            role: item.role || item.title || '默认角色',
+            role: (item.role && item.role.trim() !== item.title.trim()) ? item.role.trim() : '',
             username: item.username,
             password: item.password,
             totpSecret: item.totpSecret
@@ -172,23 +192,39 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     return true;
   }
 
-  // 4. Save captured credential into pending queue
+  // 4. Save captured credential into pending queue with Smart Deduplication
   if (request.action === 'captureCredential') {
-    const { username, password, url } = request.data;
+    const { username, password, url, title, role } = request.data;
+    const reqUser = (username || '').trim().toLowerCase();
 
     chrome.storage.local.get(['ciphervault_pending_captures'], (result) => {
       const pending = result.ciphervault_pending_captures || [];
-      const isDuplicate = pending.some(
-        p => p.url === url && p.username === username && p.password === password
+      const existingPendingIdx = pending.findIndex(
+        p => matchDomain(url, p) && (p.username || '').trim().toLowerCase() === reqUser
       );
-      if (!isDuplicate) {
-        pending.push(request.data);
-        chrome.storage.local.set({ ciphervault_pending_captures: pending });
+
+      if (existingPendingIdx >= 0) {
+        pending[existingPendingIdx] = { ...pending[existingPendingIdx], ...request.data, updatedAt: new Date().toISOString() };
+      } else {
+        pending.push({ ...request.data, id: 'item_' + Date.now() + '_' + Math.random().toString(36).substr(2, 6), createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() });
       }
+      chrome.storage.local.set({ ciphervault_pending_captures: pending });
     });
 
     getUnlockedItems().then(items => {
-      items.push(request.data);
+      const existingIdx = items.findIndex(
+        i => !i.trash && matchDomain(url, i) && (i.username || '').trim().toLowerCase() === reqUser
+      );
+
+      if (existingIdx >= 0) {
+        items[existingIdx].password = password;
+        if (title) items[existingIdx].title = title;
+        if (role) items[existingIdx].role = role;
+        items[existingIdx].updatedAt = new Date().toISOString();
+      } else {
+        items.unshift({ ...request.data, id: 'item_' + Date.now() + '_' + Math.random().toString(36).substr(2, 6), createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() });
+      }
+
       setUnlockedItems(items);
       sendResponse({ success: true });
     });

@@ -171,7 +171,7 @@ class PopupController {
     const card = document.createElement('div');
     card.className = 'card-item';
 
-    const roleText = item.role || (item.title !== this.currentHost ? item.title : '');
+    const roleText = (item.role && item.role.trim() !== (item.title || '').trim()) ? item.role.trim() : '';
     const roleTag = roleText
       ? `<span style="background: rgba(99,102,241,0.2); color: #818cf8; border: 1px solid rgba(99,102,241,0.3); padding: 1px 5px; border-radius: 4px; font-size: 10px; margin-left: 6px;">${this.escapeHtml(roleText)}</span>`
       : '';

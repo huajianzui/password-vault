@@ -149,18 +149,21 @@
         <span style="cursor: pointer; opacity: 0.7;" id="cv-close-drop">✕</span>
       </div>
       <div class="cv-drop-list">
-        ${accounts.map((acc, index) => `
-          <div class="cv-drop-item" data-index="${index}">
-            <div class="cv-item-info">
-              <div class="cv-item-title-row">
-                <span class="cv-item-name">${escapeHtml(acc.title || '未命名')}</span>
-                <span class="cv-item-role-tag">${escapeHtml(acc.role || acc.title || '默认角色')}</span>
+        ${accounts.map((acc, index) => {
+          const roleTag = acc.role ? `<span class="cv-item-role-tag">${escapeHtml(acc.role)}</span>` : '';
+          return `
+            <div class="cv-drop-item" data-index="${index}">
+              <div class="cv-item-info">
+                <div class="cv-item-title-row">
+                  <span class="cv-item-name">${escapeHtml(acc.title || '未命名')}</span>
+                  ${roleTag}
+                </div>
+                <span class="cv-item-user">${escapeHtml(acc.username || '无账号名')}</span>
               </div>
-              <span class="cv-item-user">${escapeHtml(acc.username || '无账号名')}</span>
+              <button class="cv-item-action">填入</button>
             </div>
-            <button class="cv-item-action">填入</button>
-          </div>
-        `).join('')}
+          `;
+        }).join('')}
       </div>
     `;
 
@@ -327,12 +330,10 @@
   function triggerCapturePrompt() {
     if (!isExtensionValid()) return;
 
-    // Immediately read inputs
     const { usernameInput, passwordInput } = findFields();
     let username = usernameInput ? usernameInput.value.trim() : '';
     let password = passwordInput ? passwordInput.value : '';
 
-    // Fallback to latest typed values if input was reset during submit
     if (!password && latestTyped.password && (Date.now() - latestTyped.time < 60000)) {
       password = latestTyped.password;
       username = username || latestTyped.username;
@@ -340,7 +341,6 @@
 
     if (!password) return;
 
-    // If identical to what we just autofilled, skip
     if (lastFilledData && lastFilledData.password === password && lastFilledData.username === username) {
       return;
     }

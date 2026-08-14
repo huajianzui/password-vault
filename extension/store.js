@@ -118,11 +118,41 @@ export class VaultStore {
 
     try {
       const encryptedObj = JSON.parse(encStr);
-      this.items = await VaultCrypto.decryptData(encryptedObj, this.key);
+      const rawItems = await VaultCrypto.decryptData(encryptedObj, this.key);
+      
+      // Auto-clean any historical duplicate items by (url_host, username, role)
+      this.items = this.deduplicateItems(rawItems || []);
+      await this.persistVault();
     } catch (e) {
       console.error('Vault decryption error:', e);
       this.items = [];
     }
+  }
+
+  deduplicateItems(items) {
+    const map = new Map();
+    items.forEach(item => {
+      if (item.trash) {
+        map.set(item.id, item);
+        return;
+      }
+      const host = this.normalizeHost(item.url || '');
+      const user = (item.username || '').trim().toLowerCase();
+      const role = (item.role || '').trim().toLowerCase();
+      
+      const key = host && user ? `${host}:::${user}:::${role}` : item.id;
+      if (!map.has(key)) {
+        map.set(key, item);
+      } else {
+        const existing = map.get(key);
+        const existingTime = new Date(existing.updatedAt || 0).getTime();
+        const itemTime = new Date(item.updatedAt || 0).getTime();
+        if (itemTime >= existingTime) {
+          map.set(key, item);
+        }
+      }
+    });
+    return Array.from(map.values());
   }
 
   async loadFromEncryptedString(encStr, currentMasterPassword = null) {
@@ -152,23 +182,8 @@ export class VaultStore {
         await this.saveMetadata();
       }
 
-      const itemMap = new Map();
-      this.items.forEach(item => itemMap.set(item.id, item));
-
-      remoteItems.forEach(remoteItem => {
-        const existing = itemMap.get(remoteItem.id);
-        if (!existing) {
-          itemMap.set(remoteItem.id, remoteItem);
-        } else {
-          const localTime = new Date(existing.updatedAt || 0).getTime();
-          const remoteTime = new Date(remoteItem.updatedAt || 0).getTime();
-          if (remoteTime > localTime) {
-            itemMap.set(remoteItem.id, remoteItem);
-          }
-        }
-      });
-
-      this.items = Array.from(itemMap.values());
+      const allMerged = [...this.items, ...remoteItems];
+      this.items = this.deduplicateItems(allMerged);
       await this.persistVault();
       return true;
     } catch (e) {
@@ -181,11 +196,27 @@ export class VaultStore {
   }
 
   async saveItem(item) {
-    const index = this.items.findIndex(i => i.id === item.id);
+    const itemHost = this.normalizeHost(item.url || '');
+    const itemUser = (item.username || '').trim().toLowerCase();
+    const itemRole = (item.role || '').trim().toLowerCase();
+
+    let index = -1;
+    if (item.id) {
+      index = this.items.findIndex(i => i.id === item.id);
+    }
+    if (index === -1 && itemHost && itemUser) {
+      index = this.items.findIndex(i => 
+        !i.trash && 
+        this.normalizeHost(i.url || '') === itemHost &&
+        (i.username || '').trim().toLowerCase() === itemUser &&
+        (i.role || '').trim().toLowerCase() === itemRole
+      );
+    }
+
     item.updatedAt = new Date().toISOString();
 
     if (index >= 0) {
-      this.items[index] = item;
+      this.items[index] = { ...this.items[index], ...item };
     } else {
       if (!item.id) {
         item.id = 'item_' + Date.now() + '_' + Math.random().toString(36).substr(2, 6);
@@ -194,6 +225,7 @@ export class VaultStore {
       this.items.unshift(item);
     }
 
+    this.items = this.deduplicateItems(this.items);
     await this.persistVault();
     return item;
   }
@@ -217,12 +249,12 @@ export class VaultStore {
     const currentHost = this.normalizeHost(domain);
     if (!currentHost) return [];
 
-    return this.items.filter(item => {
+    const matched = this.items.filter(item => {
       if (item.trash) return false;
       const itemHost = this.normalizeHost(item.url || '');
       const itemTitle = (item.title || '').trim().toLowerCase();
 
-      // 1. Exact host match (handles IP, localhost, domains)
+      // 1. Exact host match
       if (itemHost && (itemHost === currentHost || currentHost.includes(itemHost) || itemHost.includes(currentHost))) {
         return true;
       }
@@ -249,5 +281,7 @@ export class VaultStore {
 
       return false;
     });
+
+    return this.deduplicateItems(matched);
   }
 }
