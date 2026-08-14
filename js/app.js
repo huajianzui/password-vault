@@ -18,6 +18,7 @@ class AppController {
     this.clipboardTimer = null;
     this.autoLockCheckTimer = null;
     this.lastSyncTime = null;
+    this.isSyncing = false;
   }
 
   async init() {
@@ -89,8 +90,8 @@ class AppController {
       this.renderVaultList();
       this.clearDetailPane();
 
-      // Auto Pull latest data from cloud (WebDAV/Gist) on unlock
-      await this.autoSyncPull();
+      // Auto sync from cloud on unlock
+      await this.performSync(false);
     } catch (err) {
       console.error(err);
       this.showToast('操作失败: ' + err.message, 'danger');
@@ -98,40 +99,19 @@ class AppController {
   }
 
   /**
-   * Auto Sync Push: Push encrypted data to cloud automatically on save/delete
+   * Safe Unified Bidirectional Sync Method
    */
-  async autoSyncPush() {
+  async performSync(showToast = true) {
     const cfg = this.store.syncConfig;
-    if (!cfg || cfg.mode === 'local') return;
+    if (!cfg || cfg.mode === 'local' || this.isSyncing) return;
 
-    try {
-      const encStr = await this.store.persistVault();
-      if (cfg.mode === 'webdav' && cfg.webdav && cfg.webdav.url) {
-        await SyncClient.pushWebDAV(cfg.webdav, encStr);
-        this.updateSyncStatus('已同步至 WebDAV', new Date());
-      } else if (cfg.mode === 'gist' && cfg.gist && cfg.gist.token) {
-        const newGistId = await SyncClient.pushGist(cfg.gist, encStr);
-        if (newGistId && newGistId !== cfg.gist.gistId) {
-          this.store.syncConfig.gist.gistId = newGistId;
-          this.store.saveMetadata();
-        }
-        this.updateSyncStatus('已实时同步至 GitHub Gist', new Date());
-      }
-    } catch (e) {
-      console.warn('Auto sync push error:', e);
-      this.updateSyncStatus('同步失败: ' + e.message, null, true);
-    }
-  }
-
-  /**
-   * Auto Sync Pull: Pull remote data and update local storage (supports auto Gist ID discovery)
-   */
-  async autoSyncPull() {
-    const cfg = this.store.syncConfig;
-    if (!cfg || cfg.mode === 'local') return;
+    this.isSyncing = true;
+    this.updateSyncStatus('正在连接云端并同步...', null, false);
 
     try {
       let remoteEncData = null;
+
+      // 1. Pull from cloud
       if (cfg.mode === 'webdav' && cfg.webdav && cfg.webdav.url) {
         const content = await SyncClient.pullWebDAV(cfg.webdav);
         if (content) remoteEncData = { content };
@@ -139,19 +119,73 @@ class AppController {
         remoteEncData = await SyncClient.pullGist(cfg.gist);
       }
 
+      // 2. If remote data exists, decrypt and merge with local items
       if (remoteEncData && remoteEncData.content) {
         if (remoteEncData.gistId && remoteEncData.gistId !== cfg.gist.gistId) {
           this.store.syncConfig.gist.gistId = remoteEncData.gistId;
           this.store.saveMetadata();
         }
+
         await this.store.loadFromEncryptedString(remoteEncData.content, this.store.currentMasterPassword);
         this.renderSidebar();
         this.renderVaultList();
-        this.updateSyncStatus('已成功从云端拉取最新数据', new Date());
+      }
+
+      // 3. Push merged latest data back to cloud
+      const encStr = await this.store.persistVault();
+      if (encStr) {
+        if (cfg.mode === 'webdav' && cfg.webdav && cfg.webdav.url) {
+          await SyncClient.pushWebDAV(cfg.webdav, encStr);
+        } else if (cfg.mode === 'gist' && cfg.gist && cfg.gist.token) {
+          const newGistId = await SyncClient.pushGist(cfg.gist, encStr);
+          if (newGistId && newGistId !== cfg.gist.gistId) {
+            this.store.syncConfig.gist.gistId = newGistId;
+            this.store.saveMetadata();
+          }
+        }
+      }
+
+      const totalItems = this.store.items.filter(i => !i.trash).length;
+      this.updateSyncStatus(`已同步 (${totalItems}条数据)`, new Date(), false);
+      if (showToast) {
+        this.showToast(`双向同步成功！当前共有 ${totalItems} 条账号凭据`, 'success');
+      }
+    } catch (err) {
+      console.error('Sync failed:', err);
+      this.updateSyncStatus('同步失败: ' + err.message, null, true);
+      if (showToast) {
+        this.showToast('同步失败: ' + err.message, 'danger');
+      }
+    } finally {
+      this.isSyncing = false;
+    }
+  }
+
+  /**
+   * Auto push on item save/edit/delete
+   */
+  async autoSyncPush() {
+    const cfg = this.store.syncConfig;
+    if (!cfg || cfg.mode === 'local') return;
+
+    try {
+      const encStr = await this.store.persistVault();
+      if (!encStr) return;
+
+      if (cfg.mode === 'webdav' && cfg.webdav && cfg.webdav.url) {
+        await SyncClient.pushWebDAV(cfg.webdav, encStr);
+        this.updateSyncStatus(`已实时同步 (${this.store.items.length}条)`, new Date(), false);
+      } else if (cfg.mode === 'gist' && cfg.gist && cfg.gist.token) {
+        const newGistId = await SyncClient.pushGist(cfg.gist, encStr);
+        if (newGistId && newGistId !== cfg.gist.gistId) {
+          this.store.syncConfig.gist.gistId = newGistId;
+          this.store.saveMetadata();
+        }
+        this.updateSyncStatus(`已实时同步 (${this.store.items.length}条)`, new Date(), false);
       }
     } catch (e) {
-      console.warn('Auto sync pull error:', e);
-      this.updateSyncStatus('云端拉取失败: ' + e.message, null, true);
+      console.warn('Auto push failed:', e);
+      this.updateSyncStatus('实时推送失败: ' + e.message, null, true);
     }
   }
 
@@ -533,7 +567,6 @@ class AppController {
       this.renderVaultList();
       this.renderDetailPane(saved);
 
-      // Auto Push to cloud
       await this.autoSyncPush();
     });
 
@@ -638,9 +671,7 @@ class AppController {
 
     // Manual Sync Now button inside Sync Modal
     document.getElementById('btn-manual-sync-now').addEventListener('click', async () => {
-      this.showToast('正在即时双向同步云端数据...', 'success');
-      await this.autoSyncPull();
-      await this.autoSyncPush();
+      await this.performSync(true);
     });
 
     document.getElementById('btn-save-sync-config').addEventListener('click', async () => {
@@ -648,20 +679,19 @@ class AppController {
       this.store.syncConfig = {
         mode,
         webdav: {
-          url: document.getElementById('webdav-url').value,
-          username: document.getElementById('webdav-user').value,
-          password: document.getElementById('webdav-pwd').value
+          url: document.getElementById('webdav-url').value.trim(),
+          username: document.getElementById('webdav-user').value.trim(),
+          password: document.getElementById('webdav-pwd').value.trim()
         },
         gist: {
-          token: document.getElementById('gist-token').value,
-          gistId: document.getElementById('gist-id').value
+          token: document.getElementById('gist-token').value.trim(),
+          gistId: document.getElementById('gist-id').value.trim()
         }
       };
       this.store.saveMetadata();
-      this.showToast('同步配置保存成功！', 'success');
 
-      await this.autoSyncPull();
-      await this.autoSyncPush();
+      // Trigger safe bidirectional sync
+      await this.performSync(true);
       this.closeModals();
     });
   }

@@ -13,7 +13,7 @@ export class VaultStore {
     this.autoLockMinutes = 15;
     this.isUnlocked = false;
     this.lastActivity = Date.now();
-    this.currentMasterPassword = null; // Keep temporary in memory for salt re-derivation
+    this.currentMasterPassword = null; // Keep in memory while unlocked for salt re-derivation
     this.storageKey = 'ciphervault_encrypted_store';
     this.metaKey = 'ciphervault_metadata';
   }
@@ -93,7 +93,7 @@ export class VaultStore {
   }
 
   async persistVault() {
-    if (!this.key) return;
+    if (!this.key) return null;
     const encryptedObj = await VaultCrypto.encryptData(this.items, this.key);
     encryptedObj.salt = this.salt; // Pack public Salt together with IV and Ciphertext
     localStorage.setItem(this.storageKey, JSON.stringify(encryptedObj));
@@ -122,22 +122,26 @@ export class VaultStore {
    */
   async loadFromEncryptedString(encStr, currentMasterPassword = null) {
     const pass = currentMasterPassword || this.currentMasterPassword;
-    if (!this.key && !pass) return false;
+    if (!this.key && !pass) {
+      throw new Error('保险库尚未解锁，无法解密云端数据');
+    }
 
     try {
       const encryptedObj = JSON.parse(encStr);
       let decryptKey = this.key;
 
-      // Re-derive key using remote Salt + Master Password if remote Salt differs
+      // Re-derive key using remote Salt + Master Password if remote Salt is packed
       if (encryptedObj.salt && pass) {
         const saltBytes = new Uint8Array(VaultCrypto.base64ToBuffer(encryptedObj.salt));
         decryptKey = await VaultCrypto.deriveKey(pass, saltBytes);
       }
 
       const remoteItems = await VaultCrypto.decryptData(encryptedObj, decryptKey);
-      if (!Array.isArray(remoteItems)) return false;
+      if (!Array.isArray(remoteItems)) {
+        throw new Error('云端解密数据格式不合法，非有效数组');
+      }
 
-      // If remote decryption with same master password succeeded, align key and salt
+      // If remote decryption with same master password succeeded, align key and salt to remote
       if (encryptedObj.salt && pass) {
         this.key = decryptKey;
         this.salt = encryptedObj.salt;
@@ -148,25 +152,31 @@ export class VaultStore {
       const itemMap = new Map();
       this.items.forEach(item => itemMap.set(item.id, item));
 
+      let newCount = 0;
       remoteItems.forEach(remoteItem => {
         const existing = itemMap.get(remoteItem.id);
         if (!existing) {
           itemMap.set(remoteItem.id, remoteItem);
+          newCount++;
         } else {
           const localTime = new Date(existing.updatedAt || 0).getTime();
           const remoteTime = new Date(remoteItem.updatedAt || 0).getTime();
           if (remoteTime > localTime) {
             itemMap.set(remoteItem.id, remoteItem);
+            newCount++;
           }
         }
       });
 
       this.items = Array.from(itemMap.values());
       await this.persistVault();
-      return true;
+      return { total: this.items.length, updated: newCount };
     } catch (e) {
       console.error('Remote decryption failed:', e);
-      throw new Error('解密云端数据失败，请确认两端主密码是否完全一致（区分大小写）');
+      if (e.name === 'OperationError' || (e.message && e.message.includes('OperationError'))) {
+        throw new Error('解密失败：云端数据的主密码与当前设备的主密码不一致，请确认主密码完全一致（区分大小写）');
+      }
+      throw e;
     }
   }
 
