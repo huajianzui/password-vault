@@ -1,7 +1,7 @@
 /**
  * CipherVault Service Worker - PWA Auto Update Cache Engine
  */
-const CACHE_NAME = 'ciphervault-v3';
+const CACHE_NAME = 'ciphervault-v5';
 
 self.addEventListener('install', (event) => {
   self.skipWaiting();

@@ -322,6 +322,13 @@ class AppController {
       : `<i data-lucide="${this.getCategoryIcon(item.category)}"></i>`;
 
     pane.innerHTML = `
+      <!-- Mobile Back Navigation Button -->
+      <div class="mobile-back-bar">
+        <button class="btn btn-secondary" id="btn-detail-back" style="padding: 8px 14px; font-size: 13px;">
+          <i data-lucide="arrow-left"></i> 返回凭据列表
+        </button>
+      </div>
+
       <div class="detail-header">
         <div class="detail-title-block">
           <div class="detail-large-icon">${iconHtml}</div>
@@ -330,10 +337,10 @@ class AppController {
             <div class="detail-category-tag">${this.getCategoryLabel(item.category)} · 更新于 ${new Date(item.updatedAt).toLocaleDateString()}</div>
           </div>
         </div>
-        <div style="display: flex; gap: 8px;">
+        <div class="detail-actions">
           <button class="btn btn-secondary" id="btn-toggle-fav">
             <i data-lucide="star" style="${item.favorite ? 'color: #f59e0b; fill: #f59e0b;' : ''}"></i>
-            ${item.favorite ? '取消收藏' : '收藏'}
+            ${item.favorite ? '已收藏' : '收藏'}
           </button>
           <button class="btn btn-primary" id="btn-edit-item">编辑</button>
           <button class="btn btn-secondary" id="btn-delete-item" style="color: var(--danger);">
@@ -399,6 +406,14 @@ class AppController {
     `;
 
     if (window.lucide) window.lucide.createIcons();
+
+    // Mobile Back Button Event
+    const backBtn = document.getElementById('btn-detail-back');
+    if (backBtn) {
+      backBtn.addEventListener('click', () => {
+        pane.classList.remove('mobile-active');
+      });
+    }
 
     document.getElementById('btn-toggle-fav').addEventListener('click', async () => {
       await this.store.toggleFavorite(item.id);
@@ -518,8 +533,38 @@ class AppController {
     document.querySelectorAll('.modal-overlay').forEach(m => m.classList.remove('open'));
   }
 
+  closeSidebarDrawer() {
+    const sidebar = document.getElementById('app-sidebar');
+    const backdrop = document.getElementById('sidebar-backdrop');
+    if (sidebar) sidebar.classList.remove('open');
+    if (backdrop) backdrop.classList.remove('active');
+  }
+
+  openSidebarDrawer() {
+    const sidebar = document.getElementById('app-sidebar');
+    const backdrop = document.getElementById('sidebar-backdrop');
+    if (sidebar) sidebar.classList.add('open');
+    if (backdrop) backdrop.classList.add('active');
+  }
+
   bindEvents() {
     document.getElementById('lock-form').addEventListener('submit', (e) => this.handleMasterAuth(e));
+
+    // Mobile Sidebar Drawer Toggle Events
+    const toggleSidebarBtn = document.getElementById('btn-toggle-sidebar');
+    if (toggleSidebarBtn) {
+      toggleSidebarBtn.addEventListener('click', () => this.openSidebarDrawer());
+    }
+
+    const closeSidebarBtn = document.getElementById('btn-close-sidebar');
+    if (closeSidebarBtn) {
+      closeSidebarBtn.addEventListener('click', () => this.closeSidebarDrawer());
+    }
+
+    const backdrop = document.getElementById('sidebar-backdrop');
+    if (backdrop) {
+      backdrop.addEventListener('click', () => this.closeSidebarDrawer());
+    }
 
     document.getElementById('btn-lock-vault').addEventListener('click', () => {
       this.store.lockVault();
@@ -576,6 +621,7 @@ class AppController {
         nav.classList.add('active');
         this.currentCategory = nav.dataset.category;
         this.renderVaultList();
+        this.closeSidebarDrawer(); // Close drawer on mobile upon selection
       });
     });
 
@@ -585,6 +631,7 @@ class AppController {
     });
 
     document.getElementById('btn-open-generator').addEventListener('click', () => {
+      this.closeSidebarDrawer();
       document.getElementById('generator-modal').classList.add('open');
       this.updateGeneratorOutput();
     });
@@ -608,6 +655,7 @@ class AppController {
     });
 
     document.getElementById('btn-open-import').addEventListener('click', () => {
+      this.closeSidebarDrawer();
       document.getElementById('import-modal').classList.add('open');
     });
 
@@ -646,6 +694,7 @@ class AppController {
     });
 
     document.getElementById('btn-export-backup').addEventListener('click', async () => {
+      this.closeSidebarDrawer();
       const encStr = await this.store.persistVault();
       const blob = new Blob([encStr], { type: 'application/json' });
       const url = URL.createObjectURL(blob);
@@ -659,6 +708,7 @@ class AppController {
 
     // WebDAV / Gist Sync Settings Modal
     document.getElementById('btn-open-sync').addEventListener('click', () => {
+      this.closeSidebarDrawer();
       document.getElementById('sync-modal').classList.add('open');
       const cfg = this.store.syncConfig;
       document.getElementById('sync-mode-select').value = cfg.mode || 'local';
@@ -690,7 +740,6 @@ class AppController {
       };
       this.store.saveMetadata();
 
-      // Trigger safe bidirectional sync
       await this.performSync(true);
       this.closeModals();
     });

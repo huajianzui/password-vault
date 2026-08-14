@@ -9,21 +9,27 @@
   <meta name="theme-color" content="#0f172a" />
   <link rel="icon" type="image/jpeg" href="icon.jpg" />
   <link rel="apple-touch-icon" href="apple-touch-icon.png" />
-  <link rel="stylesheet" href="css/main.css" />
-  <link rel="stylesheet" href="css/components.css" />
+  <link rel="stylesheet" href="css/main.css?v=5" />
+  <link rel="stylesheet" href="css/components.css?v=5" />
   <!-- Lucide Icons CDN -->
   <script src="https://unpkg.com/lucide@latest"></script>
 </head>
 <body>
   <div id="app">
+    <!-- Mobile Sidebar Backdrop Overlay -->
+    <div class="sidebar-backdrop" id="sidebar-backdrop"></div>
+
     <!-- Sidebar Navigation -->
-    <aside class="sidebar">
+    <aside class="sidebar" id="app-sidebar">
       <div class="sidebar-header">
         <div class="brand">
           <img src="icon.jpg" style="width: 32px; height: 32px; border-radius: 8px; object-fit: cover;" alt="CipherVault" />
           <span>CipherVault</span>
         </div>
-        <button class="btn-icon" id="btn-open-sync" title="云同步 / WebDAV 设置"><i data-lucide="cloud-cog"></i></button>
+        <div style="display: flex; gap: 4px;">
+          <button class="btn-icon" id="btn-open-sync" title="云同步 / WebDAV 设置"><i data-lucide="cloud-cog"></i></button>
+          <button class="btn-icon mobile-menu-btn" id="btn-close-sidebar" title="关闭菜单"><i data-lucide="x"></i></button>
+        </div>
       </div>
 
       <nav class="sidebar-nav">
@@ -107,7 +113,12 @@
       <section class="vault-list-pane">
         <div class="search-header">
           <div style="display: flex; align-items: center; justify-content: space-between;">
-            <h2 style="font-size: 18px; font-weight: 700;">保险库列表</h2>
+            <div style="display: flex; align-items: center; gap: 8px;">
+              <button class="btn-icon mobile-menu-btn" id="btn-toggle-sidebar" title="打开分类菜单">
+                <i data-lucide="menu"></i>
+              </button>
+              <h2 style="font-size: 18px; font-weight: 700;">保险库列表</h2>
+            </div>
             <div style="display: flex; gap: 6px;">
               <button class="btn btn-primary" id="btn-add-item" style="padding: 8px 12px; font-size: 13px;">
                 <i data-lucide="plus"></i> 新建
@@ -351,7 +362,7 @@
   <div id="toast-container"></div>
 
   <!-- Main App Script -->
-  <script type="module" src="js/app.js?v=4"></script>
+  <script type="module" src="js/app.js?v=5"></script>
   <script>
     // Register PWA Service Worker
     if ('serviceWorker' in navigator) {

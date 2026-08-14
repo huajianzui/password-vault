@@ -86,12 +86,22 @@ html, body {
   user-select: none;
 }
 
+/* Safe area for iPhone notch and home bar */
+body {
+  padding-top: env(safe-area-inset-top);
+  padding-bottom: env(safe-area-inset-bottom);
+  padding-left: env(safe-area-inset-left);
+  padding-right: env(safe-area-inset-right);
+}
+
 /* Layout Grid */
 #app {
   display: flex;
   width: 100vw;
   height: 100vh;
+  height: 100dvh;
   overflow: hidden;
+  position: relative;
 }
 
 /* Monospace font for passwords and TOTP codes */
@@ -130,6 +140,10 @@ html, body {
   cursor: pointer;
   transition: all var(--transition-fast);
   outline: none;
+  touch-action: manipulation;
+}
+.btn:active {
+  transform: scale(0.97);
 }
 
 .btn-primary {
@@ -161,8 +175,8 @@ html, body {
 }
 
 .btn-icon {
-  width: 36px;
-  height: 36px;
+  width: 38px;
+  height: 38px;
   padding: 0;
   border-radius: var(--radius-sm);
   background: transparent;
@@ -173,10 +187,14 @@ html, body {
   align-items: center;
   justify-content: center;
   transition: all var(--transition-fast);
+  touch-action: manipulation;
 }
 .btn-icon:hover {
   background-color: rgba(255, 255, 255, 0.1);
   color: var(--text-main);
+}
+.btn-icon:active {
+  transform: scale(0.92);
 }
 
 /* Form Inputs */
@@ -195,18 +213,26 @@ html, body {
 
 .form-input {
   width: 100%;
-  padding: 10px 14px;
-  font-size: 14px;
+  padding: 12px 14px;
+  font-size: 15px;
   border-radius: var(--radius-md);
   background-color: var(--bg-input);
   border: 1px solid var(--border-color);
   color: var(--text-main);
   outline: none;
   transition: border-color var(--transition-fast);
+  -webkit-appearance: none;
 }
 .form-input:focus {
   border-color: var(--primary);
   box-shadow: 0 0 0 2px rgba(99, 102, 241, 0.2);
+}
+
+/* Prevent iOS Safari auto zoom by ensuring min 16px on mobile */
+@media (max-width: 768px) {
+  .form-input {
+    font-size: 16px;
+  }
 }
 
 /* Toast Notifications */
@@ -219,6 +245,7 @@ html, body {
   flex-direction: column;
   gap: 10px;
   pointer-events: none;
+  max-width: 90vw;
 }
 
 .toast {
@@ -245,4 +272,19 @@ html, body {
 @keyframes toastOut {
   from { opacity: 1; transform: translateY(0); }
   to { opacity: 0; transform: translateY(10px); }
+}
+
+@media (max-width: 768px) {
+  #toast-container {
+    left: 16px;
+    right: 16px;
+    bottom: 20px;
+    align-items: center;
+  }
+  .toast {
+    width: 100%;
+    justify-content: center;
+    text-align: center;
+    font-size: 13px;
+  }
 }
