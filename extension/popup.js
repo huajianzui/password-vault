@@ -61,6 +61,17 @@ class PopupController {
     document.getElementById('bottom-nav').style.display = isUnlocked ? 'flex' : 'none';
   }
 
+  async syncSessionWithBackground() {
+    try {
+      chrome.runtime.sendMessage({
+        action: 'syncUnlockedSession',
+        items: this.store.items
+      });
+    } catch (e) {
+      console.warn('Background sync error:', e);
+    }
+  }
+
   async handleAuth(e) {
     e.preventDefault();
     const input = document.getElementById('input-master-pwd');
@@ -86,7 +97,10 @@ class PopupController {
       this.showToast('已解锁保险库');
     }
 
-    // Process any pending captured credentials from in-page scripts
+    // Share unlocked items with background service worker for page-load autofill
+    await this.syncSessionWithBackground();
+
+    // Process any pending captured credentials
     await this.processPendingCaptures();
 
     this.renderVaultView();
@@ -104,7 +118,8 @@ class PopupController {
         await this.store.saveItem(item);
       }
       await chrome.storage.local.remove(['ciphervault_pending_captures']);
-      this.showToast(`已自动保存 ${pending.length} 条新登录账号！`);
+      await this.syncSessionWithBackground();
+      this.showToast(`已自动同步保存 ${pending.length} 条新登录账号！`);
     }
   }
 
@@ -161,7 +176,7 @@ class PopupController {
         <div class="card-sub">${this.escapeHtml(item.username || '无用户名')}</div>
       </div>
       <div class="card-actions">
-        ${isMatched ? `<button class="btn btn-fill btn-card-fill" title="自动填充此账号密码">⚡ 填充</button>` : ''}
+        <button class="btn btn-fill btn-card-fill" title="自动填充此账号密码">⚡ 填充</button>
         ${item.totpSecret ? `<button class="icon-btn btn-card-totp" title="复制 2FA 动态码">🔑</button>` : ''}
         <button class="icon-btn btn-card-user" title="复制账号">👤</button>
         <button class="icon-btn btn-card-pwd" title="复制密码">📋</button>
@@ -173,15 +188,42 @@ class PopupController {
     if (fillBtn) {
       fillBtn.addEventListener('click', async () => {
         if (!this.currentTab || !this.currentTab.id) return;
-        try {
-          await chrome.tabs.sendMessage(this.currentTab.id, {
-            action: 'autofill',
-            data: { username: item.username, password: item.password }
+
+        const sendFillMsg = async () => {
+          return new Promise((resolve) => {
+            chrome.tabs.sendMessage(
+              this.currentTab.id,
+              { action: 'autofill', data: { username: item.username, password: item.password } },
+              (response) => {
+                if (chrome.runtime.lastError || !response || !response.success) {
+                  resolve(false);
+                } else {
+                  resolve(true);
+                }
+              }
+            );
           });
+        };
+
+        let filled = await sendFillMsg();
+        if (!filled) {
+          // If script was not injected on existing tab, inject it on-demand
+          try {
+            await chrome.scripting.executeScript({
+              target: { tabId: this.currentTab.id },
+              files: ['content.js']
+            });
+            filled = await sendFillMsg();
+          } catch (e) {
+            console.warn('Script injection error:', e);
+          }
+        }
+
+        if (filled) {
           this.showToast('已成功填充账号与密码！');
           setTimeout(() => window.close(), 600);
-        } catch (e) {
-          this.showToast('填充失败：当前页面未加载插件脚本');
+        } else {
+          this.showToast('未能定位到可填充的输入框');
         }
       });
     }
@@ -235,6 +277,7 @@ class PopupController {
           await this.store.saveMetadata();
         }
         await this.store.loadFromEncryptedString(remoteEncData.content, this.store.currentMasterPassword);
+        await this.syncSessionWithBackground();
         this.renderVaultView();
       }
 
@@ -277,6 +320,7 @@ class PopupController {
 
     document.getElementById('btn-lock').addEventListener('click', () => {
       this.store.lockVault();
+      this.syncSessionWithBackground();
       this.showToast('保险库已锁定');
       this.checkStatus();
     });
