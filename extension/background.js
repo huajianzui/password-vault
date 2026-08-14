@@ -3,7 +3,6 @@
  */
 
 let unlockedVaultItems = [];
-let dismissedCaptures = new Set();
 
 chrome.runtime.onInstalled.addListener(() => {
   try {
@@ -38,13 +37,18 @@ chrome.contextMenus.onClicked.addListener((info, tab) => {
   }
 });
 
-// Match domain helper
+// Domain matching helper
 function matchDomain(url, item) {
   if (!url || !item) return false;
   try {
     const cleanHost = new URL(url).hostname.replace(/^www\./, '').toLowerCase();
     const itemUrl = (item.url || '').toLowerCase();
     const itemTitle = (item.title || '').toLowerCase();
+
+    // Check hostname, IP address, or localhost
+    if (cleanHost === 'localhost' || /^(\d{1,3}\.){3}\d{1,3}$/.test(cleanHost)) {
+      return itemUrl.includes(cleanHost) || itemTitle.includes(cleanHost);
+    }
 
     const mainDomain = cleanHost.split('.').slice(-2).join('.');
     return (
@@ -58,7 +62,7 @@ function matchDomain(url, item) {
   }
 }
 
-// Cross-script messaging hub
+// Cross-script messaging
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   // 1. Popup syncs unlocked items into background memory
   if (request.action === 'syncUnlockedSession') {
@@ -67,7 +71,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     return true;
   }
 
-  // 2. Content script asks for all matching accounts for current website
+  // 2. Content script asks for matching accounts for current website
   if (request.action === 'getAutofillData') {
     const url = request.url;
     const matchedList = unlockedVaultItems.filter(item => !item.trash && matchDomain(url, item));
@@ -76,7 +80,6 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
       sendResponse({
         hasMatch: true,
         count: matchedList.length,
-        // Only auto-fill silently if there's exactly 1 account. If multiple accounts, user chooses via dropdown.
         shouldAutoFillSingle: matchedList.length === 1,
         matchedAccounts: matchedList.map(item => ({
           id: item.id,
@@ -96,23 +99,17 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   // 3. Content script checks if capture prompt should be displayed
   if (request.action === 'checkShouldCapture') {
     const { username, password, url } = request.data;
-    const sessionKey = `${url}:${username}`;
 
-    if (dismissedCaptures.has(sessionKey)) {
-      sendResponse({ shouldPrompt: false, reason: 'dismissed' });
-      return true;
-    }
-
-    // Check if identical account already exists in vault
-    const alreadySaved = unlockedVaultItems.some(item => {
+    // Check if EXACT match already exists in vault (same host + same user + same password)
+    const exactMatch = unlockedVaultItems.some(item => {
       if (item.trash) return false;
       const isSameHost = matchDomain(url, item);
-      const isSameUser = (item.username || '').toLowerCase() === (username || '').toLowerCase();
+      const isSameUser = (item.username || '').trim().toLowerCase() === (username || '').trim().toLowerCase();
       const isSamePwd = item.password === password;
       return isSameHost && isSameUser && isSamePwd;
     });
 
-    if (alreadySaved) {
+    if (exactMatch) {
       sendResponse({ shouldPrompt: false, reason: 'already_saved' });
       return true;
     }
@@ -121,11 +118,9 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     return true;
   }
 
-  // 4. Save captured credential & remember dismissal
+  // 4. Save captured credential into pending queue
   if (request.action === 'captureCredential') {
     const { username, password, url } = request.data;
-    const sessionKey = `${url}:${username}`;
-    dismissedCaptures.add(sessionKey);
 
     chrome.storage.local.get(['ciphervault_pending_captures'], (result) => {
       const pending = result.ciphervault_pending_captures || [];
@@ -139,14 +134,6 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     });
 
     unlockedVaultItems.push(request.data);
-    sendResponse({ success: true });
-    return true;
-  }
-
-  // 5. User dismissed banner
-  if (request.action === 'dismissCapture') {
-    const { username, url } = request.data;
-    dismissedCaptures.add(`${url}:${username}`);
     sendResponse({ success: true });
     return true;
   }

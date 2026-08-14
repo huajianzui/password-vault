@@ -1,13 +1,14 @@
 /**
- * CipherVault Content Script - Multi-Account In-Page Selector & Autofill
+ * CipherVault Content Script - Intelligent Autofill & Robust Real-time Capture
  */
 
 (function () {
-  let hasPromptedThisSession = false;
+  let hasPromptedThisForm = false;
   let lastFilledData = null;
   let cachedMatchedAccounts = [];
+  let latestTyped = { username: '', password: '', time: 0 };
 
-  // Check if extension context is currently active & valid
+  // Check if extension context is valid
   function isExtensionValid() {
     return typeof chrome !== 'undefined' && chrome.runtime && !!chrome.runtime.id;
   }
@@ -17,15 +18,10 @@
     if (!isExtensionValid()) return;
     try {
       chrome.runtime.sendMessage(message, (response) => {
-        if (chrome.runtime.lastError) {
-          // Gracefully suppress invalidated context warnings after extension reloads
-          return;
-        }
+        if (chrome.runtime.lastError) return;
         if (callback) callback(response);
       });
-    } catch (e) {
-      // Suppress extension reload / invalidation errors
-    }
+    } catch (e) {}
   }
 
   // Safe DOM input & change event dispatcher
@@ -59,7 +55,7 @@
     }
   }
 
-  // Check if an element is visible
+  // Check element visibility
   function isElementVisible(el) {
     if (!el) return false;
     const style = window.getComputedStyle(el);
@@ -76,7 +72,7 @@
 
     let usernameInput = null;
     if (passwordInput) {
-      const form = passwordInput.closest('form') || document.body;
+      const form = passwordInput.closest('form') || passwordInput.closest('div') || document.body;
       const candidates = Array.from(
         form.querySelectorAll('input[type="text"], input[type="email"], input[type="tel"], input:not([type])')
       ).filter(isElementVisible);
@@ -121,6 +117,7 @@
 
     if (filledCount > 0) {
       lastFilledData = { username, password };
+      latestTyped = { username, password, time: Date.now() };
     }
     return filledCount > 0;
   }
@@ -168,7 +165,6 @@
 
     document.body.appendChild(dropdown);
 
-    // Bind click events on account rows
     dropdown.querySelectorAll('.cv-drop-item').forEach(itemEl => {
       itemEl.addEventListener('mousedown', (e) => {
         e.preventDefault();
@@ -187,7 +183,7 @@
     return str.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
   }
 
-  // Query background for matching accounts
+  // Query background for matching accounts on current URL
   function checkAndSetupAutofill() {
     safeSendMessage(
       { action: 'getAutofillData', url: window.location.href },
@@ -203,13 +199,26 @@
     );
   }
 
-  // Attach focus listeners to inputs to display multi-account dropdown
-  function bindInputFocusEvents() {
+  // Attach focus listeners to inputs to display multi-account dropdown & track typing
+  function bindInputEvents() {
     const inputs = document.querySelectorAll('input');
     inputs.forEach(input => {
       if (input.__cv_bound) return;
       input.__cv_bound = true;
 
+      // Track typing in real-time
+      input.addEventListener('input', () => {
+        const { usernameInput, passwordInput } = findFields();
+        if (passwordInput && passwordInput.value) {
+          latestTyped = {
+            username: usernameInput ? usernameInput.value : '',
+            password: passwordInput.value,
+            time: Date.now()
+          };
+        }
+      });
+
+      // Show dropdown on focus
       input.addEventListener('focus', () => {
         if (!isExtensionValid()) return;
         const type = (input.type || '').toLowerCase();
@@ -240,10 +249,10 @@
     }
   });
 
-  // Display floating capture banner (Strictly once per session)
+  // Display floating capture banner
   function showCaptureBanner(username, password) {
-    if (hasPromptedThisSession) return;
-    hasPromptedThisSession = true;
+    if (hasPromptedThisForm) return;
+    hasPromptedThisForm = true;
 
     const existing = document.getElementById('ciphervault-capture-banner');
     if (existing) existing.remove();
@@ -256,8 +265,8 @@
     banner.innerHTML = `
       <div class="cv-banner-icon">🛡️</div>
       <div class="cv-banner-content">
-        <div class="cv-banner-title">CipherVault 提示保存新账号</div>
-        <div class="cv-banner-sub">${username || '当前账号'} (${hostname})</div>
+        <div class="cv-banner-title">CipherVault 提示保存账号</div>
+        <div class="cv-banner-sub">${escapeHtml(username || '当前账号')} (${escapeHtml(hostname)})</div>
       </div>
       <div class="cv-banner-actions">
         <button class="cv-btn cv-btn-save" id="cv-btn-save">保存</button>
@@ -278,15 +287,19 @@
           category: 'login'
         }
       });
-      banner.style.animation = 'cvSlideOut 0.2s forwards';
-      setTimeout(() => banner.remove(), 200);
+      banner.innerHTML = `
+        <div class="cv-banner-icon">✅</div>
+        <div class="cv-banner-content">
+          <div class="cv-banner-title">已保存到 CipherVault！</div>
+        </div>
+      `;
+      setTimeout(() => {
+        banner.style.animation = 'cvSlideOut 0.2s forwards';
+        setTimeout(() => banner.remove(), 200);
+      }, 1200);
     });
 
     document.getElementById('cv-btn-ignore').addEventListener('click', () => {
-      safeSendMessage({
-        action: 'dismissCapture',
-        data: { username, url: window.location.href }
-      });
       banner.style.animation = 'cvSlideOut 0.2s forwards';
       setTimeout(() => banner.remove(), 200);
     });
@@ -296,42 +309,42 @@
         banner.style.animation = 'cvSlideOut 0.2s forwards';
         setTimeout(() => banner.remove(), 200);
       }
-    }, 8000);
+    }, 10000);
   }
 
-  // Handle Form Capture safely
-  let submitDebounceTimer = null;
-  function handleFormSubmitCapture() {
-    if (hasPromptedThisSession || !isExtensionValid()) return;
+  // Trigger capture check instantly
+  function triggerCapturePrompt() {
+    if (hasPromptedThisForm || !isExtensionValid()) return;
 
-    if (submitDebounceTimer) clearTimeout(submitDebounceTimer);
-    submitDebounceTimer = setTimeout(() => {
-      try {
-        const { usernameInput, passwordInput } = findFields();
-        const password = passwordInput ? passwordInput.value : '';
-        const username = usernameInput ? usernameInput.value : '';
+    // Immediately read form values
+    const { usernameInput, passwordInput } = findFields();
+    let username = usernameInput ? usernameInput.value : '';
+    let password = passwordInput ? passwordInput.value : '';
 
-        if (!password) return;
+    // Fallback to latest typed values if input was cleared on click
+    if (!password && latestTyped.password && (Date.now() - latestTyped.time < 60000)) {
+      password = latestTyped.password;
+      username = username || latestTyped.username;
+    }
 
-        if (lastFilledData && lastFilledData.password === password && lastFilledData.username === username) {
-          return;
+    if (!password) return;
+
+    // Check if this matches what we just autofilled
+    if (lastFilledData && lastFilledData.password === password && lastFilledData.username === username) {
+      return;
+    }
+
+    safeSendMessage(
+      {
+        action: 'checkShouldCapture',
+        data: { username, password, url: window.location.href }
+      },
+      (response) => {
+        if (response && response.shouldPrompt) {
+          showCaptureBanner(username, password);
         }
-
-        safeSendMessage(
-          {
-            action: 'checkShouldCapture',
-            data: { username, password, url: window.location.href }
-          },
-          (response) => {
-            if (response && response.shouldPrompt) {
-              showCaptureBanner(username, password);
-            }
-          }
-        );
-      } catch (e) {
-        // Suppress
       }
-    }, 300);
+    );
   }
 
   // Listen for messages from popup
@@ -344,24 +357,38 @@
           return true;
         }
       });
-    } catch (e) {
-      // Invalidation guard
-    }
+    } catch (e) {}
   }
 
-  // Track form submits
-  document.addEventListener('submit', handleFormSubmitCapture, true);
+  // Listen for Form Submissions & Clicks on Login Buttons
+  document.addEventListener('submit', triggerCapturePrompt, true);
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') {
+      const activeEl = document.activeElement;
+      if (activeEl && (activeEl.type === 'password' || activeEl.type === 'text' || activeEl.type === 'email')) {
+        triggerCapturePrompt();
+      }
+    }
+  }, true);
+
   document.addEventListener('click', (e) => {
     const target = e.target;
-    if (target && (target.type === 'submit' || target.matches('button[type="submit"], input[type="submit"]'))) {
-      handleFormSubmitCapture();
+    if (!target) return;
+
+    // Check if target is a submit button or a login-related button/element
+    const isButton = target.matches('button, input[type="button"], input[type="submit"], a, [role="button"]');
+    const text = (target.textContent || target.value || '').trim();
+    const isLoginText = /登\s*录|Sign\s*in|Log\s*in|Submit|确定|下一步/i.test(text);
+
+    if (isButton && (target.type === 'submit' || isLoginText || target.closest('form'))) {
+      triggerCapturePrompt();
     }
   }, true);
 
   // Dynamic DOM observation
   const observer = new MutationObserver(() => {
     if (isExtensionValid()) {
-      bindInputFocusEvents();
+      bindInputEvents();
     }
   });
 
@@ -374,11 +401,11 @@
   if (document.readyState === 'loading') {
     document.addEventListener('DOMContentLoaded', () => {
       checkAndSetupAutofill();
-      bindInputFocusEvents();
+      bindInputEvents();
     });
   } else {
     checkAndSetupAutofill();
-    bindInputFocusEvents();
+    bindInputEvents();
   }
 
 })();
